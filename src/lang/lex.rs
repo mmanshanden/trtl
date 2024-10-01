@@ -1,6 +1,6 @@
 use std::{fmt::Debug, str::Chars};
 
-/// The `Token` type represents a
+/// The `Token` type
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Token<'a> {
     // util
@@ -57,66 +57,66 @@ impl<'a> Token<'a> {
         }
     }
 
-    pub fn number(&self) -> Option<&'a str> {
-        match self {
-            Self::Number(num) => Some(num),
-            _ => None,
-        }
-    }
+    // pub fn number(&self) -> Option<&'a str> {
+    //     match self {
+    //         Self::Number(num) => Some(num),
+    //         _ => None,
+    //     }
+    // }
 
-    pub fn brace(&self) -> Option<Self> {
-        match self {
-            Self::LeftBrace => Some(Self::LeftBrace),
-            Self::RightBrace => Some(Self::RightBrace),
-            _ => None,
-        }
-    }
+    // pub fn brace(&self) -> Option<Self> {
+    //     match self {
+    //         Self::LeftBrace => Some(Self::LeftBrace),
+    //         Self::RightBrace => Some(Self::RightBrace),
+    //         _ => None,
+    //     }
+    // }
 
-    pub fn parenthesis(&self) -> Option<Self> {
-        match self {
-            Self::LeftParen => Some(Self::LeftParen),
-            Self::RightParen => Some(Self::RightParen),
-            _ => None,
-        }
-    }
+    // pub fn parenthesis(&self) -> Option<Self> {
+    //     match self {
+    //         Self::LeftParen => Some(Self::LeftParen),
+    //         Self::RightParen => Some(Self::RightParen),
+    //         _ => None,
+    //     }
+    // }
 
-    pub fn len(&self) -> i32 {
-        match self {
-            Self::Undefined => i32::MAX,
-            Self::Eof => 0,
-            Self::Identifier(id) => id.len() as i32,
-            Self::Number(num) => num.len() as i32,
-            Self::True => 4,
-            Self::False => 5,
-            Self::Plus => 1,
-            Self::Minus => 1,
-            Self::Multiply => 1,
-            Self::Divide => 1,
-            Self::Assign => 1,
-            Self::Bang => 1,
-            Self::Equals => 2,
-            Self::NotEqual => 2,
-            Self::GreaterThan => 1,
-            Self::GreaterEqualThan => 2,
-            Self::LessThan => 1,
-            Self::LessEqualThan => 2,
-            Self::LeftParen => 1,
-            Self::RightParen => 1,
-            Self::Comma => 1,
-            Self::SemiColon => 1,
-            Self::LeftBrace => 1,
-            Self::RightBrace => 1,
-            Self::If => 2,
-            Self::Else => 2,
-            Self::While => 5,
-            Self::Return => 6,
-            Self::Break => 5,
-            Self::Forward => 7,
-            Self::Left => 4,
-            Self::Right => 5,
-            Self::Func => 4,
-        }
-    }
+    // pub fn len(&self) -> i32 {
+    //     match self {
+    //         Self::Undefined => i32::MAX,
+    //         Self::Eof => 0,
+    //         Self::Identifier(id) => id.len() as i32,
+    //         Self::Number(num) => num.len() as i32,
+    //         Self::True => 4,
+    //         Self::False => 5,
+    //         Self::Plus => 1,
+    //         Self::Minus => 1,
+    //         Self::Multiply => 1,
+    //         Self::Divide => 1,
+    //         Self::Assign => 1,
+    //         Self::Bang => 1,
+    //         Self::Equals => 2,
+    //         Self::NotEqual => 2,
+    //         Self::GreaterThan => 1,
+    //         Self::GreaterEqualThan => 2,
+    //         Self::LessThan => 1,
+    //         Self::LessEqualThan => 2,
+    //         Self::LeftParen => 1,
+    //         Self::RightParen => 1,
+    //         Self::Comma => 1,
+    //         Self::SemiColon => 1,
+    //         Self::LeftBrace => 1,
+    //         Self::RightBrace => 1,
+    //         Self::If => 2,
+    //         Self::Else => 2,
+    //         Self::While => 5,
+    //         Self::Return => 6,
+    //         Self::Break => 5,
+    //         Self::Forward => 7,
+    //         Self::Left => 4,
+    //         Self::Right => 5,
+    //         Self::Func => 4,
+    //     }
+    // }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -125,12 +125,6 @@ pub struct Loc {
     pub col: usize,
     pub byte: usize,
     pub char: usize,
-}
-
-impl Loc {
-    pub fn line(&self) -> usize {
-        self.line
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -208,6 +202,7 @@ impl<'a> Lexer<'a> {
 
     /// Returns true when given `char` cannot be part of an identifier
     /// string.
+    /// 
     fn is_forbidden_identifier_char(&self, char: char) -> bool {
         matches!(
             char,
@@ -344,9 +339,9 @@ impl<'a> Lexer<'a> {
                 "func" => Token::Func,
                 "if" => Token::If,
                 "else" => Token::Else,
-                "while" => Token::Else,
-                "return" => Token::Else,
-                "break" => Token::Else,
+                "while" => Token::While,
+                "return" => Token::Return,
+                "break" => Token::Break,
                 "forward" => Token::Forward,
                 "left" => Token::Left,
                 "right" => Token::Right,

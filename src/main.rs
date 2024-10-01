@@ -1,9 +1,7 @@
 use std::{fs::File, io::Read};
 
-use lang::{parse_program, ParseResult, Run};
-use lex::Lexer;
+use lang::{lex::Lexer, parse::parse_program, run::{ParseResult, Run}};
 
-mod lex;
 mod lang;
 
 fn main() {

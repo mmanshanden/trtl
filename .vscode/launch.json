@@ -9,6 +9,8 @@
             "request": "launch",
             "name": "Web",
             "url": "http://localhost:4000",
+            "cwd": "${workspaceFolder}/web",
+            "preLaunchTask": "dev-server"
         },
         {
             "type": "lldb",
