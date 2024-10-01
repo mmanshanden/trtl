@@ -1,0 +1,9 @@
+if (2) { 
+    x = x + 3; 
+} else {
+    x = 2;
+}
+
+func test(x,y) {
+    x = 2;
+}
