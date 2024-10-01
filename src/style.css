@@ -38,15 +38,12 @@ html, body {
   height: 100%;
   width: 100%;
   counter-reset: line;
-  overflow: scroll;
-  word-wrap: break-word;
+  overflow-x: auto;
+  text-wrap: nowrap;;  
 }
 
-.code-editor > div {
-  width: 100%;
-}
 
-div.line::before {
+.code-editor div.ln::before {
   counter-increment: line;
   content: counter(line);
   opacity: 0.5;

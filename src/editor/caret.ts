@@ -1,71 +1,34 @@
 import { Editor } from "./editor"
 
 
-const nodeContentLength = (node: ChildNode): number => {
+const elementLength = (node: ChildNode): number => {
     return node.textContent?.length ?? 0
 }
 
-const positionInNode = (node: ChildNode): number => {
-    const selection = document.getSelection()
-
-    if (!selection) {
-        return 0
-    }
-
-    const range = selection.getRangeAt(0)
+const positionInElement = (range: Range, node: ChildNode, side: 'start' | 'end'): number => {
     const rel = range.cloneRange()
 
     rel.selectNodeContents(node)
-    rel.setEnd(range.endContainer, range.endOffset)
+
+    if (side === 'start') {
+        rel.setEnd(range.startContainer, range.startOffset) 
+    } else {
+        rel.setEnd(range.endContainer, range.endOffset)
+    }
 
     return rel.toString().length
 }
 
-export interface Caret {
-    absoluteIndex: number,
-    lineIndex: number,
-    charIndex: number
-}
-
-export const selectCurrentLine = ({ element, ...editor }: Editor) => {
-    const selection = document.getSelection()
-
-    if (!selection) {
-        return
-    }
-
-    const range = document.createRange()
-    const { lineIndex } = getCaret({ element: element, ...editor })
-
-    const line = element.childNodes[lineIndex]
-
-    range.setStart(line, 0)
-    range.setEnd(line, 1)
-
-    selection.removeAllRanges()
-    selection.addRange(range)
-}
-
-export const getCaret = ({ element }: Editor): Caret => {
-    const selection = document.getSelection()
-
-    if (!selection) {
-        return {
-            absoluteIndex: 0,
-            lineIndex: 0,
-            charIndex: 0
-        }
-    }
-
+const positionInDocument = (selection: Selection, document: HTMLDivElement, side: 'start' | 'end'): Position => {
     const range = selection.getRangeAt(0)
-    const node = range.endContainer
+    const node = side === 'start' ? range.startContainer : range.endContainer
 
     let absoluteIndex = 0
     let lineIndex = 0
 
-    for (const line of element.childNodes) {
+    for (const line of document.childNodes) {
         if (line.contains(node) || line === node) {
-            const length = positionInNode(line)
+            const length = positionInElement(range, line, side)
 
             return {
                 absoluteIndex: absoluteIndex + length,
@@ -74,7 +37,7 @@ export const getCaret = ({ element }: Editor): Caret => {
             }
         }
 
-        absoluteIndex += nodeContentLength(line)
+        absoluteIndex += elementLength(line)
         lineIndex += 1
     }
 
@@ -85,7 +48,58 @@ export const getCaret = ({ element }: Editor): Caret => {
     }
 }
 
-export const setCaret = ({ element }: Editor, { charIndex, lineIndex }: Caret) => {
+export interface Position {
+    absoluteIndex: number,
+    lineIndex: number,
+    charIndex: number
+}
+
+export interface Caret {
+    from: Position
+    to?: Position
+}
+
+export const selectCurrentLine = ({ element, ...editor }: Editor) => {
+    const selection = document.getSelection()
+
+    if (!selection) {
+        return
+    }
+
+    const range = document.createRange()
+    const { lineIndex } = getCaret({ element: element, ...editor })!.from
+
+    const line = element.childNodes[lineIndex]
+
+    range.setStart(line, 0)
+    range.setEnd(line, 1)
+
+    selection.removeAllRanges()
+    selection.addRange(range)
+}
+
+export const getCaret = ({ element }: Editor): Caret | null => {
+    const selection = document.getSelection()
+
+    if (!selection) {
+        return null
+    }
+
+    let range = selection.getRangeAt(0)
+
+    if (range.startOffset === range.endOffset && range.startContainer === range.endContainer) {
+        return {
+            from: positionInDocument(selection, element, 'start')
+        }
+    }
+
+    return {
+        from: positionInDocument(selection, element, 'start'),
+        to: positionInDocument(selection, element, 'end')
+    }
+}
+
+export const setCaret = ({ element }: Editor, { charIndex, lineIndex }: Position) => {
     const selection = window.getSelection();
 
     if (!selection) {
@@ -109,7 +123,7 @@ export const setCaret = ({ element }: Editor, { charIndex, lineIndex }: Caret) =
             continue
         }
 
-        const length = nodeContentLength(node)
+        const length = elementLength(node)
 
         if (charIndex <= length) {
             break

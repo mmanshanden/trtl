@@ -16,7 +16,7 @@ const setContent = ({ element }: Editor, ...content: string[]) => {
     let html = ""
 
     lines.forEach(({ fragments }, lineIndex) => {
-        html += `<div class="editor-line">`
+        html += `<div class="ln">`
 
         fragments.forEach(({ value, style }) => {
             if (style) {
@@ -54,7 +54,8 @@ export const editor = (element: HTMLDivElement): Editor => {
         keyMap: { state: new Map() }
     }
 
-    setContent(state, "")
+    setContent(state, "Hello", "Lorem ipsum dolor sit amet,", "consectetur adipiscing elit.", "Curabitur vestibulum dictum nunc vel tincidunt.", "Aliquam erat volutpat. Ut vel commodo eros. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Interdum et malesuada fames ac ante ipsum primis in faucibus.", "Mauris euismod sit amet dolor vitae laoreet. Pellentesque", "eget laoreet tortor. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae")
+    codeEditor.focus()
 
     element.addEventListener("keyup", (e) => {
         const { key, control } = releaseKey(state.keyMap, e)
@@ -66,7 +67,9 @@ export const editor = (element: HTMLDivElement): Editor => {
         let caret = getCaret(state)
         let content = getContent(state)
         setContent(state, ...content)
-        setCaret(state, caret)
+        if (caret) { 
+            setCaret(state, caret.from)
+        }
     })
 
     element.addEventListener("keydown", (e) => {
@@ -84,6 +87,17 @@ export const editor = (element: HTMLDivElement): Editor => {
     element.addEventListener("paste", (e) => {
         e.preventDefault()
     })
+
+    const printDebug = () => {
+        const caret = getCaret(state)
+        console.log(caret)
+
+        setTimeout(() => {
+            printDebug()
+        }, 1200);
+    }
+
+    printDebug()
 
     return state
 }
