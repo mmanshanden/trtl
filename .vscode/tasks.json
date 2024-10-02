@@ -2,8 +2,13 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "dev-server",
-            "command": "npm run dev",
+            "label": "build-wasm",
+            "command": "cargo build --target wasm32-unknown-unknown --release",
+            "type": "shell"
+        },
+        {
+            "label": "start-dev-server",
+            "command": "npx vite --port 4000",
             "type": "shell",
             "isBackground": true,
             "options": {
@@ -15,17 +20,33 @@
                         {
                             "regexp": ".",
                             "file": 0,
-                            "location": 2,
+                            "location": 0,
                             "message": 0
                         }
                     ],
                     "background": {
                         "activeOnStart": true,
-                        "beginsPattern": ".",
-                        "endsPattern": ".",
+                        "beginsPattern": "dev",
+                        "endsPattern": "ready in",
                     }
                 }
             ]
-        }
+        },
+        {
+            "label": "start-web",
+            "dependsOn": [
+                "build-wasm",
+                "start-dev-server"
+            ],
+            "dependsOrder": "parallel"
+        },
+        {
+            "label": "stop-dev-server",
+            "type": "shell",
+            "command": "npx kill-port 4000",
+            "options": {
+                "cwd": "${workspaceFolder}/web",
+            }
+        },
     ]
 }

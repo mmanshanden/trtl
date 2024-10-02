@@ -10,7 +10,8 @@
             "name": "Web",
             "url": "http://localhost:4000",
             "cwd": "${workspaceFolder}/web",
-            "preLaunchTask": "dev-server"
+            "preLaunchTask": "start-web",
+            "postDebugTask": "stop-dev-server"
         },
         {
             "type": "lldb",

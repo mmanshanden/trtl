@@ -1,18 +1,20 @@
 {
-  "name": "trtl-web-2",
+  "name": "trtl-web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port 4000",
+    "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "kill-port": "^2.0.1",
     "typescript": "^5.5.3",
     "vite": "^5.4.1"
   },
   "dependencies": {
+    "trtl-web": "file:",
     "trtl-web-2": "file:"
   }
 }

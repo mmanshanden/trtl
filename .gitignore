@@ -23,3 +23,6 @@ dist-ssr
 
 # Artifacts
 /target
+/web/public/release
+/web/public/wasm32-unknown-unknown
+/web/public/wasm/
