@@ -97,7 +97,7 @@ export const editor = (element: HTMLDivElement): Editor => {
         }, 1200);
     }
 
-    printDebug()
+    //printDebug()
 
     return state
 }

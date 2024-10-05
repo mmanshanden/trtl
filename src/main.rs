@@ -1,7 +1,7 @@
 use core::str;
 use std::{fs::File, io::Read};
 
-use lang::{ast::Program, lex::Lexer, parse::parse_program, run::{ParseResult, Run}};
+use lang::{lex::Lexer, parse::parse_program, run::{ParseResult, Run}};
 use wasm::bencode::bencode_program;
 
 mod lang;
