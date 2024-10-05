@@ -1,7 +1,9 @@
 
 use crate::lang::lex::Token;
 
+use super::ast::Entry;
 use super::ast::Expr;
+use super::ast::Program;
 use super::ast::Stmt;
 use super::run::ParseResult;
 use super::run::Run;
@@ -22,7 +24,6 @@ use super::run::Stack;
 /// when parsing was not possible.
 ///
 fn parse_expr_primary<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Expr> {
-    println!("parse_expr_primary, {:?}", run);
     let is_primary = |token: Token<'a>| match token {
         Token::Number(_) => Some(token),
         Token::Identifier(_) => Some(token),
@@ -77,7 +78,6 @@ fn parse_expr_primary<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a,
 /// when parsing was not possible.
 ///
 fn parse_expr_args<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Vec<Expr>> {
-    println!("parse_expr_args");
     if run.token() != Token::LeftParen {
         return Err(run);
     }
@@ -131,7 +131,6 @@ fn parse_expr_args<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Ve
 }
 
 fn parse_expr_parens<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Expr> {
-    println!("parse_expr_parens");
     let n = match run.first_where(|t| t == Token::LeftParen, deny) {
         None => return Err(run),
         Some(n) => n,
@@ -366,6 +365,30 @@ fn parse_stmt_expr<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, St
     Ok(Stmt::Expr(expr), run)
 }
 
+fn parse_stmt<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
+    take_best_parse![
+        parse_stmt_if(run.clone(), deny),
+        parse_stmt_block(run.clone(), deny),
+        parse_stmt_expr(run.clone(), deny)
+    ]
+
+    // let is_stmt_token = |token| -> Option<Token> {
+    //     match token {
+    //         Token::If => Some(token),
+    //         Token::LeftBrace => Some(token),
+    //         Token::RightBrace => Some(token),
+    //         _ => None,
+    //     }
+    // };
+
+    // match run.first_where_some(is_stmt_token, deny) {
+    //     Some((_, Token::If)) => return parse_stmt_if(run, deny),
+    //     Some((_, Token::LeftBrace)) => return parse_stmt_block(run, deny),
+    //     Some((_, Token::RightBrace)) => return parse_stmt_block(run, deny),
+    //     _ => return parse_stmt_expr(run, deny),
+    // }
+}
+
 fn parse_func_params<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Vec<String>> {
     if run.token() != Token::LeftParen {
         return Err(run);
@@ -409,7 +432,7 @@ fn parse_func_params<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, 
     Ok(params, run)
 }
 
-fn parse_func<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
+fn parse_entry_func<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Entry> {
     let n = match run.first_where(|token| token == Token::Func, deny) {
         None => return Err(run),
         Some(n) => n,
@@ -431,43 +454,32 @@ fn parse_func<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
 
     let (body, run) = match parse_stmt(run, deny) {
         Err(run) => return Err(run),
-        Ok(stmt, next) => (Box::new(stmt), next),
+        Ok(stmt, next) => (stmt, next),
     };
 
-    Ok(Stmt::Func(identifier.to_string(), params, body), run)
+    Ok(Entry::Func(identifier.to_string(), params, body), run)
 }
 
-fn parse_stmt<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
-    take_best_parse![
-        parse_stmt_if(run.clone(), deny),
-        parse_stmt_block(run.clone(), deny),
-        parse_stmt_expr(run.clone(), deny)
-    ]
+fn parse_entry_stmt<'a>(mut run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Entry> {
+    deny.push(Token::Func);
 
-    // let is_stmt_token = |token| -> Option<Token> {
-    //     match token {
-    //         Token::If => Some(token),
-    //         Token::LeftBrace => Some(token),
-    //         Token::RightBrace => Some(token),
-    //         _ => None,
-    //     }
-    // };
+    let parse_stmt_result = parse_stmt(run, deny);
 
-    // match run.first_where_some(is_stmt_token, deny) {
-    //     Some((_, Token::If)) => return parse_stmt_if(run, deny),
-    //     Some((_, Token::LeftBrace)) => return parse_stmt_block(run, deny),
-    //     Some((_, Token::RightBrace)) => return parse_stmt_block(run, deny),
-    //     _ => return parse_stmt_expr(run, deny),
-    // }
+    deny.pop();
+
+    match parse_stmt_result {
+        Err(err) => Err(err),
+        Ok(stmt, next) => Ok(Entry::Stmt(stmt), next)
+    }
 }
 
-pub fn parse_program<'a>(mut run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Vec<Stmt>> {
+pub fn parse_program<'a>(mut run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Program> {
     let mut program = Vec::new();
 
     loop {
         let result = take_best_parse![
-            parse_stmt(run.clone(), deny), 
-            parse_func(run.clone(), deny)
+            parse_entry_stmt(run.clone(), deny), 
+            parse_entry_func(run.clone(), deny)
         ];
 
         match result {

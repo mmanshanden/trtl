@@ -166,8 +166,8 @@ impl<'a> Lexer<'a> {
             chars,
             current_char: curr,
             current_loc: Loc {
-                line: 1,
-                col: 1,
+                line: 0,
+                col: 0,
                 byte: 0,
                 char: 0,
             },
@@ -181,7 +181,7 @@ impl<'a> Lexer<'a> {
 
             if c == '\n' {
                 self.current_loc.line += 1;
-                self.current_loc.col = 1;
+                self.current_loc.col = 0;
             } else {
                 self.current_loc.col += 1;
             }

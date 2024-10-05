@@ -26,7 +26,13 @@ pub enum Stmt {
     If(Expr, Box<Stmt>),
     IfElse(Expr, Box<Stmt>, Box<Stmt>),
     Scope(Vec<Stmt>),
-    Expr(Expr),
-    Func(String, Vec<String>, Box<Stmt>),
+    Expr(Expr)
 }
 
+#[derive(Debug)]
+pub enum Entry {
+    Func(String, Vec<String>, Stmt),
+    Stmt(Stmt)
+}
+
+pub type Program = Vec<Entry>;

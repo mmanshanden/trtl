@@ -98,7 +98,6 @@ impl<'a> Run<'a> {
     ) -> Option<(usize, T)> {
         for (i, t) in self.tokens.iter().enumerate() {
             if deny.contains(&t.value()) {
-                println!("deny contains {:?}", &t.value());
                 return None;
             }
 
