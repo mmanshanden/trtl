@@ -58,4 +58,12 @@ html, body {
   font-weight: bold;
 }
 
+.identifier {
+  font-weight: bold;
+}
+
+.number {
+  color: darkgreen;
+}
+
 

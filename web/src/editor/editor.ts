@@ -1,3 +1,4 @@
+import { Module } from '../wasm/wasm'
 import { getCaret, selectCurrentLine, setCaret } from './caret'
 import { highlight } from './highlight'
 import { KeyMap, pressKey, releaseKey } from './keymap'
@@ -5,13 +6,14 @@ import { KeyMap, pressKey, releaseKey } from './keymap'
 export interface Editor {
     element: HTMLDivElement
     keyMap: KeyMap
+    module: Module
 }
 
 const ignoredKeys = ["ArrowUp", "ArrowLeft", "ArrowRight", "ArrowDown", "Control", "Shift", "Alt", "CapsLock"]
 
-const setContent = ({ element }: Editor, ...content: string[]) => {
+export const setContent = ({ module, element }: Editor, ...content: string[]) => {
     const input = content.flatMap(line => line.split('\n'))
-    const lines = highlight(input)
+    const lines = highlight(module, input)
 
     let html = ""
 
@@ -45,16 +47,16 @@ const getContent = ({ element }: Editor) => {
     return lines.map(node => node.textContent ?? "")
 }
 
-export const editor = (element: HTMLDivElement): Editor => {
+export const editor = (element: HTMLDivElement, module: Module): Editor => {
     element.innerHTML = `<div class="code-editor" contenteditable="true" spellcheck="false" />`
     const codeEditor = element.querySelector<HTMLDivElement>('div.code-editor')!
 
     const state: Editor = {
         element: codeEditor,
-        keyMap: { state: new Map() }
+        keyMap: { state: new Map() },
+        module: module
     }
 
-    setContent(state, "Hello", "Lorem ipsum dolor sit amet,", "consectetur adipiscing elit.", "Curabitur vestibulum dictum nunc vel tincidunt.", "Aliquam erat volutpat. Ut vel commodo eros. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; Interdum et malesuada fames ac ante ipsum primis in faucibus.", "Mauris euismod sit amet dolor vitae laoreet. Pellentesque", "eget laoreet tortor. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae")
     codeEditor.focus()
 
     element.addEventListener("keyup", (e) => {

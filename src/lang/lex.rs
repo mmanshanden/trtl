@@ -129,23 +129,9 @@ pub struct Loc {
 
 #[derive(Clone, Copy)]
 pub struct Span<T> {
-    value: T,
-    from: Loc,
-    to: Loc,
-}
-
-impl<T> Span<T> {
-    pub fn value(self) -> T {
-        self.value
-    }
-
-    pub fn from(self) -> Loc {
-        self.from
-    }
-
-    pub fn to(self) -> Loc {
-        self.to
-    }
+    pub value: T,
+    pub from: Loc,
+    pub to: Loc,
 }
 
 #[derive(Debug)]

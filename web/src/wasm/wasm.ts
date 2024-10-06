@@ -1,31 +1,39 @@
 
 type Export = (...args: number[]) => (void | number)
 
-interface Module {
+export interface Module {
     exports: Record<string, Export>
     memory: WebAssembly.Memory
 }
 
-
-const read_string_from_module = (module: Module, ptr: number, len: number) => {
-    const mem = new Uint8Array(module.memory.buffer);
-    const buffer = mem.subarray(ptr, ptr + len);
-    
-    return new TextDecoder('utf-8').decode(buffer);
+export interface WasmArray {
+    ptr: number,
+    len: number
 }
 
-export const read_return_string_from_module = (module: Module, ptr: number) => {
+const read_bytes_from_module = (module: Module, ptr: number, len: number): Uint8Array => {
+    const mem = new Uint8Array(module.memory.buffer, ptr, len);
+    const bytes = new Uint8Array(len)
+
+    bytes.set(mem)
+
+    return bytes
+}
+
+export const read_return_bytes_from_module = (module: Module, ptr: number): Uint8Array => {
     const mem = new Uint8Array(module.memory.buffer);
     const ret_ptr = mem[ptr + 0] | mem[ptr + 1] << 8 | mem[ptr + 2] << 16 | mem[ptr + 3] << 24;
     const ret_len = mem[ptr + 4] | mem[ptr + 5] << 8 | mem[ptr + 6] << 16 | mem[ptr + 7] << 24;
 
     module.exports.mfree(ptr, 8)
 
-    const value = read_string_from_module(module, ret_ptr, ret_len)
+    return read_bytes_from_module(module, ret_ptr, ret_len)
+}
 
-    module.exports.mfree(ret_ptr, ret_len)
-
-    return value
+export const write_bytes_to_module = (module: Module, bytes: Uint8Array): number => {
+    const ptr = module.exports.malloc(bytes.length) as number
+    new Uint8Array(module.memory.buffer).set(bytes, ptr)
+    return ptr
 }
 
 export const loadModule = async (path: string) => {
@@ -34,13 +42,15 @@ export const loadModule = async (path: string) => {
     const env = {
         alert: (ptr: number, len: number) => {
             if (!module) return
-            const str = read_string_from_module(module, ptr, len)
-            console.error(str)
+            const bytes = read_bytes_from_module(module, ptr, len)
+            const decoded = new TextDecoder('utf-8').decode(bytes)
+            console.error(decoded)
         },
         print: (ptr: number, len: number) => {
             if (!module) return
-            const str = read_string_from_module(module, ptr, len)
-            console.info(str)
+            const bytes = read_bytes_from_module(module, ptr, len)
+            const decoded = new TextDecoder('utf-8').decode(bytes)
+            console.log(decoded)
         }
     }
 

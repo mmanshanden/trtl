@@ -23,7 +23,7 @@ impl<'a> Run<'a> {
 
 impl<'a> Run<'a> {
     pub fn token(&self) -> Token<'a> {
-        self.tokens[0].value()
+        self.tokens[0].value
     }
 
     // pub fn current_line(&self) -> usize {
@@ -43,7 +43,7 @@ impl<'a> Run<'a> {
     /// Inserts given token into the run.
     ///
     pub fn insert(self, token: Token<'a>) -> Self {
-        let oper = Op::Insert(self.tokens[0].from(), token);
+        let oper = Op::Insert(self.tokens[0].from, token);
         Self {
             dist: self.dist + 1,
             tokens: self.tokens,
@@ -54,7 +54,7 @@ impl<'a> Run<'a> {
     /// Deletes `n` tokens from the run.
     ///
     pub fn delete(self, n: usize) -> Self {
-        let oper = Op::Remove(self.tokens[0].from(), self.tokens[n - 1].to());
+        let oper = Op::Remove(self.tokens[0].from, self.tokens[n - 1].to);
 
         Self {
             dist: self.dist + (n as i32),
@@ -77,11 +77,11 @@ impl<'a> Run<'a> {
     ///
     pub fn first_where(&self, pred: impl Fn(Token) -> bool, deny: &Stack<'a>) -> Option<usize> {
         for (i, t) in self.tokens.iter().enumerate() {
-            if deny.contains(&t.value()) {
+            if deny.contains(&t.value) {
                 return None;
             }
 
-            if pred(t.value()) {
+            if pred(t.value) {
                 return Some(i);
             }
         }
@@ -97,11 +97,11 @@ impl<'a> Run<'a> {
         deny: &Stack<'a>,
     ) -> Option<(usize, T)> {
         for (i, t) in self.tokens.iter().enumerate() {
-            if deny.contains(&t.value()) {
+            if deny.contains(&t.value) {
                 return None;
             }
 
-            if let Some(r) = pred(t.value()) {
+            if let Some(r) = pred(t.value) {
                 return Some((i, r));
             }
         }

@@ -1,11 +1,14 @@
 pub mod bencode;
-pub mod fragment;
+pub mod highlight;
 
 use std::alloc::Layout;
+
+use highlight::highlight;
 
 use crate::lang::{lex::Lexer, parse::parse_program};
 
 /// Converts a wasm memory to a string
+/// 
 unsafe fn read_string_from_mem(ptr: *mut u8, len: usize) -> String {
     let bytes = Vec::from_raw_parts(ptr, len, len);
     std::str::from_utf8(&bytes).unwrap().to_string()
@@ -66,15 +69,23 @@ pub unsafe fn mfree(ptr: *mut u8, len: usize) {
 }
 
 #[no_mangle]
-fn echo(start: *mut u8, len: usize) -> *const u8 {
+fn high(ptr: *mut u8, len: usize) -> *const u8 {
     std::panic::set_hook(Box::new(|panic_info| {
         let out = panic_info.to_string();
         console_error(&out)
     }));
 
     let input = unsafe { 
-        read_string_from_mem(start, len) 
+        read_string_from_mem(ptr, len) 
     };
 
-    return return_bytes(input.bytes().collect());
+    let fragments = highlight(&input);
+
+    let bytes: Vec<u8> = fragments
+        .into_iter()
+        .flat_map(|frag| [frag.from, frag.to, frag.kind])
+        .flat_map(|ident| ident.to_le_bytes())
+        .collect();
+
+    return_bytes(bytes)
 }
