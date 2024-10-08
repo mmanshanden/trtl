@@ -473,13 +473,14 @@ fn parse_entry_stmt<'a>(mut run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'
     }
 }
 
-pub fn parse_program<'a>(mut run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Program> {
+pub fn parse_program<'a>(mut run: Run<'a>, ) -> ParseResult<'a, Program> {
     let mut program = Vec::new();
+    let mut deny = Vec::new();
 
     loop {
         let result = take_best_parse![
-            parse_entry_stmt(run.clone(), deny), 
-            parse_entry_func(run.clone(), deny)
+            parse_entry_stmt(run.clone(), &mut deny), 
+            parse_entry_func(run.clone(), &mut deny)
         ];
 
         match result {

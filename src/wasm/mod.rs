@@ -3,6 +3,7 @@ pub mod highlight;
 
 use std::alloc::Layout;
 
+use bencode::benchode_highlight;
 use highlight::highlight;
 
 use crate::lang::{lex::Lexer, parse::parse_program};
@@ -35,7 +36,7 @@ extern "C" {
     fn alert(start: usize, len: usize);
 }
 
-fn console_log(msg: &str) {
+fn console_log(msg: String) {
     let ptr = msg.as_ptr();
     let len = msg.len();
     unsafe {
@@ -79,13 +80,8 @@ fn high(ptr: *mut u8, len: usize) -> *const u8 {
         read_string_from_mem(ptr, len) 
     };
 
-    let fragments = highlight(&input);
-
-    let bytes: Vec<u8> = fragments
-        .into_iter()
-        .flat_map(|frag| [frag.from, frag.to, frag.kind])
-        .flat_map(|ident| ident.to_le_bytes())
-        .collect();
+    let mut bytes = Vec::new();
+    benchode_highlight(&mut bytes, highlight(&input));
 
     return_bytes(bytes)
 }

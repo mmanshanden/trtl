@@ -1,41 +1,46 @@
 
+use std::vec;
+
 use crate::lang::ast::{Program, Stmt, Entry};
 
-fn bencode_str(out: &mut Vec<u8>, value: String) {
-    let mut bytes: Vec<u8> = value.bytes().collect();
-    let mut len: Vec<u8> = bytes.len().to_string().bytes().collect();
+use super::{console_log, highlight::{Fragment, Highlight, Line}};
 
+fn bencode_str(out: &mut Vec<u8>, bytes: &mut Vec<u8>) {
+    let mut len: Vec<u8> = bytes.len().to_string().bytes().collect();
+    
     out.append(&mut len);
     out.push(b':');
-    out.append(&mut bytes);
+    out.append(bytes);
 }
 
-fn bencode_entry(out: &mut Vec<u8>, entry: Entry) {
-    match entry {
-        Entry::Func(name, args, body) => {
-            out.push(b'd');
-            bencode_str(out, "name".to_string());
-            bencode_str(out, name);
-            out.push(b'l');
-            for arg in args {
-                bencode_str(out, arg);
-            }
-            out.push(b'e');
-            out.push(b'e');
-        },
-        Entry::Stmt(stmt) => {
-            out.push(b'l');
-            out.push(b'e');
-        }
-    }
+
+fn bencode_fragment(out: &mut Vec<u8>, fragment: Fragment) {
+    let mut buffer = fragment.value.as_bytes();
+    let mut len = (buffer.len() + 1).to_string().bytes().collect();
+    
+    out.append(&mut len);
+    out.push(b':');
+    out.push(fragment.kind);
+    out.extend_from_slice(&buffer);
 }
 
-pub fn bencode_program(out: &mut Vec<u8>, program: Program) {
+
+fn bencode_line(out: &mut Vec<u8>, line: Line) {
     out.push(b'l');
 
-    for entry in program {
-        bencode_entry(out, entry); 
+    for fragment in line {
+        bencode_fragment(out, fragment);
     }
+
+    out.push(b'e');
+}
+
+pub fn benchode_highlight(out: &mut Vec<u8>, highlight: Highlight) {
+    out.push(b'l');
+
+    for line in highlight {
+        bencode_line(out, line); 
+    } 
 
     out.push(b'e');
 }

@@ -158,15 +158,15 @@ impl<'a> Ops<'a> {
         Self::Cons(op, Box::new(self))
     }
 
-    // pub fn map<R, F: Fn(Op<'a>) -> R>(self, map: F) -> Vec<R> {
-    //     let mut result = Vec::new();
-    //     let mut ops = self;
+    pub fn map<R, F: Fn(Op<'a>) -> R>(self, map: F) -> Vec<R> {
+        let mut result = Vec::new();
+        let mut ops = self;
 
-    //     while let Ops::Cons(head, tail) = ops {
-    //         result.push(map(head));
-    //         ops = *tail;
-    //     }
+        while let Ops::Cons(head, tail) = ops {
+            result.push(map(head));
+            ops = *tail;
+        }
 
-    //     result
-    // }
+        result
+    }
 }

@@ -1,58 +1,121 @@
 use core::fmt;
+use std::{collections::HashMap, hash::Hash, io::Cursor};
 
-use crate::lang::lex::{Lexer, Span, Token};
+use crate::lang::{lex::{Lexer, Loc, Span, Token}, parse::parse_program, run::{Op, Run, Tokens}};
 
 use super::console_log;
 
+#[derive(Debug, Clone)]
 pub struct Fragment {
-    pub from: usize,
-    pub to: usize,
-    pub kind: usize   
+    pub value: String,
+    pub kind: u8   
 }
 
-pub fn highlight(input: &str) -> Vec<Fragment> {
-    let mut lexer = Lexer::new(input);
+pub type Line = Vec<Fragment>;
 
-    let mut pos = 0;
-    let mut fragments = Vec::new();
+pub type Highlight = Vec<Line>; 
 
-    loop {
-        let token = lexer.next_token();
+fn op_to_lint(op: Op) -> Option<Span<String>> {
+    match op {
+        Op::Insert(_, _) => None,
+        Op::Remove(from, to) => Some(Span { 
+            value: "lint".to_string(),
+            from,
+            to
+        })
+    }
+}
 
-        if pos < token.from.byte {
-            fragments.push(Fragment {
-                from: pos,
-                to: token.from.byte,
-                kind: 0
-            });
+struct TokenMap {
+    map: HashMap<usize, u8>
+}
+
+impl TokenMap {
+    pub fn new<'a>(tokens: Vec<Span<Token<'a>>>) -> Self {
+        let mut map = HashMap::new();
+
+        for token in tokens {
+            let from = token.from.char;
+            let to = token.to.char;
+            let kind = match token.value {
+                Token::If => 1,
+                Token::Else => 1,
+                Token::Func => 1,
+                Token::While => 1,
+                Token::Break => 2,
+                Token::Return => 2,
+                Token::True => 3,
+                Token::False => 3,
+                Token::Number(_) => 4,
+                Token::Identifier(_) => 5,
+                _ => 0
+            };
+
+            for i in from..to {
+                map.insert(i, kind);
+            }
         }
 
-        if token.value == Token::Eof {
-            break;
+        TokenMap { 
+            map 
         }
-
-        let kind = match token.value {
-            Token::If => 1,
-            Token::Else => 1,
-            Token::Func => 1,
-            Token::While => 1,
-            Token::Break => 2,
-            Token::Return => 2,
-            Token::True => 3,
-            Token::False => 3,
-            Token::Identifier(_) => 4,
-            Token::Number(_) => 5,
-            _ => 0
-        };
-
-        fragments.push(Fragment {
-            from: token.from.byte,
-            to: token.to.byte,
-            kind
-        });
-
-        pos = token.to.byte
     }
 
-    fragments
+    pub fn check(&self, idx: usize) -> Option<&u8> {
+        self.map.get(&idx)
+    }
+}
+
+pub fn highlight(input: &str) -> Highlight {
+    let tokens = Lexer::new(input).tokens();
+    let run = Run::new(&tokens);
+
+    let ops = match parse_program(run) {
+        crate::lang::run::ParseResult::Err(r) => r.ops,
+        crate::lang::run::ParseResult::Ok(_, r) => r.ops
+    };
+
+    console_log(format!("{:?}", ops));
+
+    let token_map = TokenMap::new(tokens);
+
+    let mut current = Fragment {
+        kind: *token_map.check(0).unwrap_or(&0),
+        value: String::new()
+    };
+
+    let mut fragments = Vec::new();
+    let mut highlights = Vec::new();
+
+    for (i, char) in input.chars().enumerate() {
+        let &kind = token_map.check(i).unwrap_or(&current.kind);
+
+        if char ==  '\n' {
+            fragments.push(current);
+            highlights.push(fragments);
+            
+            fragments = Vec::new();
+            current = Fragment {
+                kind,
+                value: String::new()
+            };
+
+            continue;
+        }
+
+        if kind == current.kind {
+            current.value.push(char);
+        } else {
+            fragments.push(current);
+            current = Fragment {
+                kind,
+                value: char.to_string()
+            }
+        }
+    }
+
+    fragments.push(current);
+    highlights.push(fragments);
+
+    highlights
 }

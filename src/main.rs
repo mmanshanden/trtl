@@ -2,7 +2,6 @@ use core::str;
 use std::{fs::File, io::Read};
 
 use lang::{lex::Lexer, parse::parse_program, run::{ParseResult, Run}};
-use wasm::bencode::bencode_program;
 
 mod lang;
 mod wasm;
@@ -31,7 +30,7 @@ fn main() {
 
     let run = Run::new(&tokens);
 
-    let parse_result = parse_program(run, &mut Vec::new());
+    let parse_result = parse_program(run);
 
     let (program, dist, ops) = match parse_result {
         ParseResult::Err(_) => { 
@@ -40,9 +39,4 @@ fn main() {
         },
         ParseResult::Ok(program, run) => (program, run.dist, run.ops),
     };
-
-    let mut bencoded = Vec::new();
-    bencode_program(&mut bencoded, program);
-
-    println!("\nstmt: {:?}\ndist: {}\nops: {:?}", str::from_utf8(&bencoded).unwrap(), dist, ops)
 }

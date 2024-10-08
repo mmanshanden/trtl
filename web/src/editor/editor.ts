@@ -3,6 +3,7 @@ import { getCaret, selectCurrentLine, setCaret } from './caret'
 import { highlight } from './highlight'
 import { KeyMap, pressKey, releaseKey } from './keymap'
 
+
 export interface Editor {
     element: HTMLDivElement
     keyMap: KeyMap
@@ -12,9 +13,8 @@ export interface Editor {
 const ignoredKeys = ["ArrowUp", "ArrowLeft", "ArrowRight", "ArrowDown", "Control", "Shift", "Alt", "CapsLock"]
 
 export const setContent = ({ module, element }: Editor, ...content: string[]) => {
-    const input = content.flatMap(line => line.split('\n'))
+    const input = content.join('\n')
     const lines = highlight(module, input)
-
     let html = ""
 
     lines.forEach(({ fragments }, lineIndex) => {
@@ -42,7 +42,7 @@ export const setContent = ({ module, element }: Editor, ...content: string[]) =>
     element.innerHTML = html
 }
 
-const getContent = ({ element }: Editor) => {
+const getContent = ({ element }: Editor): string[] => {
     const lines = Array.from(element.childNodes)
     return lines.map(node => node.textContent ?? "")
 }
