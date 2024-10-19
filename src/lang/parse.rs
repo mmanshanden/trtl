@@ -251,7 +251,7 @@ macro_rules! take_best_parse {
     [$result1:expr, $result2:expr] => {
         match ($result1, $result2) {
             (Ok(t1, run1), Ok(t2, run2)) => {
-                if run1.dist < run2.dist {
+                if run1.dist <= run2.dist {
                     Ok(t1, run1)
                 } else {
                     Ok(t2, run2)
@@ -264,6 +264,27 @@ macro_rules! take_best_parse {
     [$result1:expr, $( $tail:expr ),+] => {
         take_best_parse!($result1, take_best_parse!($($tail),+))
     };
+}
+
+fn parse_stmt_while<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
+    let n = match run.first_where(|token| token == Token::While, deny) {
+        None => return Err(run),
+        Some(n) => n,
+    };
+
+    let run = run.advance_by(n);
+
+    let (expr, run) = match parse_expr(run, deny) {
+        Err(run) => return ParseResult::Err(run),
+        Ok(expr, next) => (expr, next),
+    };
+
+    let (stmt, run) = match parse_stmt(run, deny) {
+        Err(run) => return Err(run),
+        Ok(stmt, next) => (Box::new(stmt), next),
+    };
+    
+    Ok(Stmt::While(expr, stmt), run)
 }
 
 fn parse_stmt_if<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
@@ -282,7 +303,7 @@ fn parse_stmt_if<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt
     deny.push(Token::Else);
 
     let parse_stmt_result = parse_stmt(run, deny);
-
+   
     deny.pop();
 
     let (if_part, run) = match parse_stmt_result {
@@ -345,6 +366,87 @@ fn parse_stmt_block<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, S
     Ok(Stmt::Scope(stmts), run)
 }
 
+fn parse_stmt_forward<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
+    let n = match run.first_where(|token| token == Token::Forward, &deny) {
+        Some(n) => n,
+        None => return Err(run)
+    };
+
+    let run = run.advance_by(n);
+
+    deny.push(Token::SemiColon);
+
+    let parse_expr_result = parse_expr(run, deny);
+
+    deny.pop();
+
+    let (expr, run) = match parse_expr_result {
+        Err(errored) => return Err(errored),
+        Ok(expr, next) => (expr, next),
+    };
+
+    let run = match run.first_where(|token| token == Token::SemiColon, deny) {
+        Some(n) => run.advance_by(n),
+        None => run.insert(Token::SemiColon),
+    };
+
+    Ok(Stmt::Forward(expr), run)
+}
+
+fn parse_stmt_left<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
+    let n = match run.first_where(|token| token == Token::Left, &deny) {
+        Some(n) => n,
+        None => return Err(run)
+    };
+
+    let run = run.advance_by(n);
+
+    deny.push(Token::SemiColon);
+
+    let parse_expr_result = parse_expr(run, deny);
+
+    deny.pop();
+
+    let (expr, run) = match parse_expr_result {
+        Err(errored) => return Err(errored),
+        Ok(expr, next) => (expr, next),
+    };
+
+    let run = match run.first_where(|token| token == Token::SemiColon, deny) {
+        Some(n) => run.advance_by(n),
+        None => run.insert(Token::SemiColon),
+    };
+
+    Ok(Stmt::Left(expr), run)
+}
+
+fn parse_stmt_right<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
+    let n = match run.first_where(|token| token == Token::Right, &deny) {
+        Some(n) => n,
+        None => return Err(run)
+    };
+
+    let run = run.advance_by(n);
+
+    deny.push(Token::SemiColon);
+
+    let parse_expr_result = parse_expr(run, deny);
+
+    deny.pop();
+
+    let (expr, run) = match parse_expr_result {
+        Err(errored) => return Err(errored),
+        Ok(expr, next) => (expr, next),
+    };
+
+    let run = match run.first_where(|token| token == Token::SemiColon, deny) {
+        Some(n) => run.advance_by(n),
+        None => run.insert(Token::SemiColon),
+    };
+
+    Ok(Stmt::Right(expr), run)
+}
+
 fn parse_stmt_expr<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
     deny.push(Token::SemiColon);
 
@@ -365,11 +467,43 @@ fn parse_stmt_expr<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, St
     Ok(Stmt::Expr(expr), run)
 }
 
+fn parse_stmt_return<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
+    let n = match run.first_where(|token| token == Token::Return, deny) {
+        Some(n) => n,
+        None => return Err(run)
+    };
+
+    let run = run.advance_by(n);
+
+    deny.push(Token::SemiColon);
+
+    let parse_expr_result = parse_expr(run, deny);
+
+    deny.pop();
+
+    let (expr, run) = match parse_expr_result {
+        Err(run) => (None, run),
+        Ok(expr, next) => (Some(expr), next),
+    };
+
+    let run = match run.first_where(|token| token == Token::SemiColon, deny) {
+        Some(n) => run.advance_by(n),
+        None => run.insert(Token::SemiColon),
+    };
+
+    Ok(Stmt::Return(expr), run)
+}
+
 fn parse_stmt<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
     take_best_parse![
-        parse_stmt_if(run.clone(), deny),
         parse_stmt_block(run.clone(), deny),
-        parse_stmt_expr(run.clone(), deny)
+        parse_stmt_while(run.clone(), deny),
+        parse_stmt_if(run.clone(), deny),
+        parse_stmt_forward(run.clone(), deny),
+        parse_stmt_left(run.clone(), deny),
+        parse_stmt_right(run.clone(), deny),
+        parse_stmt_expr(run.clone(), deny),
+        parse_stmt_return(run.clone(), deny)
     ]
 
     // let is_stmt_token = |token| -> Option<Token> {
@@ -452,7 +586,7 @@ fn parse_entry_func<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, E
         Ok(params, run) => (params, run),
     };
 
-    let (body, run) = match parse_stmt(run, deny) {
+    let (body, run) = match parse_stmt_block(run, deny) {
         Err(run) => return Err(run),
         Ok(stmt, next) => (stmt, next),
     };

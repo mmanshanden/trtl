@@ -1,24 +1,24 @@
 use core::fmt;
 use std::{collections::HashMap, hash::Hash, io::Cursor};
 
-use crate::lang::{lex::{Lexer, Loc, Span, Token}, parse::parse_program, run::{Op, Run, Tokens}};
+use crate::lang::{lex::{Lexer, Loc, Span, Token}, parse::parse_program, run::{Correction, Run, Tokens}};
 
 use super::console_log;
 
 #[derive(Debug, Clone)]
 pub struct Fragment {
     pub value: String,
-    pub kind: u8   
+    pub kind: u8,
 }
 
 pub type Line = Vec<Fragment>;
 
 pub type Highlight = Vec<Line>; 
 
-fn op_to_lint(op: Op) -> Option<Span<String>> {
+fn op_to_lint(op: Correction) -> Option<Span<String>> {
     match op {
-        Op::Insert(_, _) => None,
-        Op::Remove(from, to) => Some(Span { 
+        Correction::Insert(_, _) => None,
+        Correction::Remove(from, to) => Some(Span { 
             value: "lint".to_string(),
             from,
             to
@@ -71,11 +71,9 @@ pub fn highlight(input: &str) -> Highlight {
     let run = Run::new(&tokens);
 
     let ops = match parse_program(run) {
-        crate::lang::run::ParseResult::Err(r) => r.ops,
-        crate::lang::run::ParseResult::Ok(_, r) => r.ops
+        crate::lang::run::ParseResult::Err(r) => r.corrections,
+        crate::lang::run::ParseResult::Ok(_, r) => r.corrections
     };
-
-    console_log(format!("{:?}", ops));
 
     let token_map = TokenMap::new(tokens);
 

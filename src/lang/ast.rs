@@ -25,8 +25,13 @@ pub enum Expr {
 pub enum Stmt {
     If(Expr, Box<Stmt>),
     IfElse(Expr, Box<Stmt>, Box<Stmt>),
+    While(Expr, Box<Stmt>),
+    Forward(Expr),
+    Left(Expr),
+    Right(Expr),
     Scope(Vec<Stmt>),
-    Expr(Expr)
+    Expr(Expr),
+    Return(Option<Expr>)
 }
 
 #[derive(Debug)]

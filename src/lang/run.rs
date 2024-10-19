@@ -7,7 +7,7 @@ pub type Stack<'a> = Vec<Token<'a>>;
 #[derive(Clone, Debug)]
 pub struct Run<'a> {
     pub dist: i32,
-    pub ops: Ops<'a>,
+    pub corrections: Corrections<'a>,
     pub tokens: Tokens<'a>,
 }
 
@@ -15,7 +15,7 @@ impl<'a> Run<'a> {
     pub fn new(tokens: &'a Vec<Span<Token>>) -> Self {
         Self {
             dist: 0,
-            ops: Ops::Nil,
+            corrections: Corrections::Nil,
             tokens
         }
     }
@@ -36,30 +36,34 @@ impl<'a> Run<'a> {
         Self {
             dist: self.dist,
             tokens: &self.tokens[1..],
-            ops: self.ops,
+            corrections: self.corrections,
         }
     }
 
     /// Inserts given token into the run.
     ///
     pub fn insert(self, token: Token<'a>) -> Self {
-        let oper = Op::Insert(self.tokens[0].from, token);
+        if self.token() == token {
+            return self.advance()
+        }
+
+        let oper = Correction::Insert(self.tokens[0].from, token);
         Self {
             dist: self.dist + 1,
             tokens: self.tokens,
-            ops: self.ops.append_operation(oper),
+            corrections: self.corrections.append_correction(oper),
         }
     }
 
     /// Deletes `n` tokens from the run.
     ///
     pub fn delete(self, n: usize) -> Self {
-        let oper = Op::Remove(self.tokens[0].from, self.tokens[n - 1].to);
+        let oper = Correction::Remove(self.tokens[0].from, self.tokens[n].to);
 
         Self {
             dist: self.dist + (n as i32),
             tokens: &self.tokens[(n + 1)..],
-            ops: self.ops.append_operation(oper),
+            corrections: self.corrections.append_correction(oper),
         }
     }
 
@@ -99,7 +103,7 @@ impl<'a> Run<'a> {
         for (i, t) in self.tokens.iter().enumerate() {
             if deny.contains(&t.value) {
                 return None;
-            }
+            } 
 
             if let Some(r) = pred(t.value) {
                 return Some((i, r));
@@ -142,27 +146,27 @@ impl<'a, T> ParseResult<'a, T> {
 /// An operation that has been used to transform the input to
 /// a valid parse tree.
 #[derive(Clone, Debug)]
-pub enum Op<'a> {
+pub enum Correction<'a> {
     Insert(Loc, Token<'a>),
     Remove(Loc, Loc),
 }
 
 #[derive(Clone, Debug)]
-pub enum Ops<'a> {
+pub enum Corrections<'a> {
     Nil,
-    Cons(Op<'a>, Box<Ops<'a>>),
+    Cons(Correction<'a>, Box<Corrections<'a>>),
 }
 
-impl<'a> Ops<'a> {
-    fn append_operation(self, op: Op<'a>) -> Ops<'a> {
+impl<'a> Corrections<'a> {
+    fn append_correction(self, op: Correction<'a>) -> Corrections<'a> {
         Self::Cons(op, Box::new(self))
     }
 
-    pub fn map<R, F: Fn(Op<'a>) -> R>(self, map: F) -> Vec<R> {
+    pub fn map<R, F: Fn(Correction<'a>) -> R>(self, map: F) -> Vec<R> {
         let mut result = Vec::new();
         let mut ops = self;
 
-        while let Ops::Cons(head, tail) = ops {
+        while let Corrections::Cons(head, tail) = ops {
             result.push(map(head));
             ops = *tail;
         }
