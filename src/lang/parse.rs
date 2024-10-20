@@ -326,14 +326,13 @@ fn parse_stmt_if<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt
 }
 
 fn parse_stmt_block<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
-    let mut run = match run.first_where_some(
-        |token| match token {
-            Token::LeftBrace => Some(Token::LeftBrace),
-            Token::RightBrace => Some(Token::RightBrace),
-            _ => None,
-        },
-        deny,
-    ) {
+    let block_delimiter = |token| match token {
+        Token::LeftBrace => Some(Token::LeftBrace),
+        Token::RightBrace => Some(Token::RightBrace),
+        _ => None,
+    };
+
+    let mut run = match run.first_where_some(block_delimiter, deny) {
         Some((n, Token::LeftBrace)) => run.advance_by(n),
         Some((_, Token::RightBrace)) => run.insert(Token::LeftBrace),
         _ => return Err(run),

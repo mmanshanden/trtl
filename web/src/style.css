@@ -66,4 +66,12 @@ html, body {
   color: darkgreen;
 }
 
+.insert {
+  border-bottom: 1px dotted blue;
+}
+
+.remove {
+  border-bottom: 1px dotted red;
+}
+
 

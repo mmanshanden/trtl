@@ -16,11 +16,12 @@ fn bencode_str(out: &mut Vec<u8>, bytes: &mut Vec<u8>) {
 
 fn bencode_fragment(out: &mut Vec<u8>, fragment: Fragment) {
     let mut buffer = fragment.value.as_bytes();
-    let mut len = (buffer.len() + 1).to_string().bytes().collect();
+    let mut len = (buffer.len() + 2).to_string().bytes().collect();
     
     out.append(&mut len);
     out.push(b':');
     out.push(fragment.kind);
+    out.push(fragment.lint);
     out.extend_from_slice(&buffer);
 }
 

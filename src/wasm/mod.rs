@@ -6,8 +6,6 @@ use std::alloc::Layout;
 use bencode::benchode_highlight;
 use highlight::highlight;
 
-use crate::lang::{lex::Lexer, parse::parse_program};
-
 /// Converts a wasm memory to a string
 /// 
 unsafe fn read_string_from_mem(ptr: *mut u8, len: usize) -> String {

@@ -2,10 +2,12 @@ import { decode, DecodeResult } from "../wasm/benocde"
 import { Module, read_return_bytes_from_module, write_bytes_to_module } from "../wasm/wasm"
 
 type Style = 'keyword' | 'flow' |  'identifier' | 'number' | 'constant'
+type Lint = 'insert' | 'remove'
 
 interface Fragment {
     value: string
-    style?: Style
+    kind: Style
+    lint: Lint
 }
 
 interface Line {
@@ -28,6 +30,16 @@ const translate_kind_to_style = (kind: number): Style | undefined => {
     }
 }
 
+const translate_lint_to_style = (lint: number): Lint | undefined => {
+    if (lint === 1) {
+        return 'insert'
+    } else if (lint === 2) {
+        return 'remove'
+    } else {
+        return undefined
+    }
+}
+
 export const highlight = (module: Module, input: string): Line[] => {
     const decoder = new TextDecoder('utf-8')
 
@@ -42,11 +54,13 @@ export const highlight = (module: Module, input: string): Line[] => {
         return {
             fragments: line.map((fragment: Uint8Array) => {
                 let kind = fragment[0]
-                let utf8 = fragment.subarray(1, fragment.length)
+                let lint = fragment[1]
+                let utf8 = fragment.subarray(2, fragment.length)
     
                 return {
                     value: decoder.decode(utf8),
-                    style: translate_kind_to_style(kind)
+                    kind: translate_kind_to_style(kind),
+                    lint: translate_lint_to_style(lint)
                 }
             })
         }

@@ -4,7 +4,7 @@ use std::{fs::File, io::Read};
 use lang::{compile::compile, lex::Lexer, parse::parse_program, run::{ParseResult, Run}};
 use machine::{canvas::Canvas, cpu::Cpu};
 
-use minifb::{Window, WindowOptions};
+// use minifb::{Window, WindowOptions};
 
 pub mod lang;
 pub mod machine;
@@ -49,17 +49,17 @@ fn main() {
 
     let ops = compile(program);
 
-    let window_options = WindowOptions::default();
+    // let window_options = WindowOptions::default();
 
-    let mut canvas = Canvas::new(786, 786);
-    let mut cpu = Cpu::new(stdout, ops);
-    let mut window = Window::new("trtl", 786, 786, window_options).unwrap();
+    // let mut canvas = Canvas::new(786, 786);
+    // let mut cpu = Cpu::new(stdout, ops);
+    // let mut window = Window::new("trtl", 786, 786, window_options).unwrap();
 
-    window.limit_update_rate(None);
+    // window.limit_update_rate(None);
 
-    while window.is_open() {
-        cpu.run_n(&mut canvas, 1 << 18);
+    // while window.is_open() {
+    //     cpu.run_n(&mut canvas, 1 << 18);
 
-        window.update_with_buffer(&canvas.get_pixel_data(), 786, 786).unwrap();
-    }
+    //     window.update_with_buffer(&canvas.get_pixel_data(), 786, 786).unwrap();
+    // }
 }

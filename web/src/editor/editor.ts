@@ -20,9 +20,10 @@ export const setContent = ({ module, element }: Editor, ...content: string[]) =>
     lines.forEach(({ fragments }, lineIndex) => {
         html += `<div class="ln">`
 
-        fragments.forEach(({ value, style }) => {
-            if (style) {
-                html += `<span class="${style}">${value}</span>`
+        fragments.forEach(({ value, kind, lint }) => {
+            if (kind || lint) {
+                let classes = [kind, lint].filter(Boolean).join(" ")
+                html += `<span class="${classes}">${value}</span>`
             } else if (value === " ") {
                 // Simply inserting a ` ` token has proven to be buggy, at least in Firefox. 
                 // Inserting a `&nbsp;` token instead gives no issues.

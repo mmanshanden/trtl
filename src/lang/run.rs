@@ -58,7 +58,7 @@ impl<'a> Run<'a> {
     /// Deletes `n` tokens from the run.
     ///
     pub fn delete(self, n: usize) -> Self {
-        let oper = Correction::Remove(self.tokens[0].from, self.tokens[n].to);
+        let oper = Correction::Remove(self.tokens[0].from, self.tokens[n-1].to);
 
         Self {
             dist: self.dist + (n as i32),
@@ -162,7 +162,7 @@ impl<'a> Corrections<'a> {
         Self::Cons(op, Box::new(self))
     }
 
-    pub fn map<R, F: Fn(Correction<'a>) -> R>(self, map: F) -> Vec<R> {
+    pub fn map<R, F: FnMut(Correction<'a>) -> R>(self, mut map: F) -> Vec<R> {
         let mut result = Vec::new();
         let mut ops = self;
 
