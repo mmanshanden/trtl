@@ -1,23 +1,26 @@
 use core::fmt;
-use std::{collections::HashMap, hash::Hash, io::Cursor};
+use std::{collections::HashMap};
 
-use crate::lang::{lex::{Lexer, Loc, Span, Token}, parse::parse_program, run::{Correction, Corrections, Run, Tokens}};
+use crate::lang::{lex::{Lexer, Span, Token}, parse::parse_program, run::{Correction, Corrections, Run, Tokens}};
 
-use super::console_log;
 
 #[derive(Debug, Clone)]
 pub struct Fragment {
     pub value: String,
-    pub lint: u8,
+    pub hint: u8,
     pub kind: u8,
 }
 
 pub type Line = Vec<Fragment>;
 
-pub type Highlight = Vec<Line>; 
+pub struct Highlight {
+    pub lines: Vec<Line>,
+    pub hints: Vec<String>
+} 
+    
 
 struct TokenMap {
-    map: HashMap<usize, u8>
+    chars: HashMap<usize, u8>
 }
 
 impl TokenMap {
@@ -47,52 +50,58 @@ impl TokenMap {
         }
 
         TokenMap { 
-            map 
+            chars: map 
         }
     }
 
     pub fn check(&self, idx: usize) -> Option<&u8> {
-        self.map.get(&idx)
+        self.chars.get(&idx)
     }
 }
 
 struct CorrectionMap {
-    map: HashMap<usize, u8>
+    chars: HashMap<usize, u8>,
+    hints: Vec<String>
 }
 
 impl CorrectionMap {
     pub fn new<'a>(corrections: Corrections<'a>) -> Self {
-        let mut map = HashMap::new();
+        let mut chars = HashMap::new();
+        let mut hints = vec![String::new(), String::new()];
 
         corrections.map(|c| {
+            // insert corrections into map: 
+            // "location of character" -> "index of hint"
+            // 
+            // Hint index starts at 1 because 0 is reserved hard errors
+            // that do not have a hint.
             match c {
-                Correction::Insert(at, _) => {
-                    map.insert(at.char, 1);
+                Correction::Insert(at, replacement) => {
+                    chars.insert(at.char, hints.len() as u8);
+                    hints.push(format!("Did you mean to put a {:?}?", replacement));
                 },
                 Correction::Remove(from, to) => {
                     for i in from.char..to.char {
-                        map.insert(i, 2);
+                        chars.insert(i, 1);
                     }
                 }
             }
         });
 
         CorrectionMap { 
-            map 
+            chars,
+            hints
         }
     }
 
     pub fn check(&self, idx: usize) -> Option<&u8> {
-        self.map.get(&idx)
+        self.chars.get(&idx)
     }
 }
 
-
 pub fn highlight(input: &str) -> Highlight {
     let tokens = Lexer::new(input).tokens();
-    let run = Run::new(&tokens);
-    
-    let corrections = match parse_program(run) {
+    let corrections = match parse_program(Run::new(&tokens)) {
         crate::lang::run::ParseResult::Err(r) => r.corrections,
         crate::lang::run::ParseResult::Ok(_, r) => r.corrections
     };
@@ -102,46 +111,54 @@ pub fn highlight(input: &str) -> Highlight {
 
     let mut current = Fragment {
         kind: *token_map.check(0).unwrap_or(&0),
-        lint: *correction_map.check(0).unwrap_or(&0),
+        hint: *correction_map.check(0).unwrap_or(&0),
         value: String::new()
     };
 
     let mut fragments = Vec::new();
-    let mut highlights = Vec::new();
+    let mut lines = Vec::new();
 
     for (i, char) in input.chars().enumerate() {
-        
-        let &lint = correction_map.check(i).unwrap_or(&0);
+        let &hint = correction_map.check(i).unwrap_or(&0);
         let &kind = token_map.check(i).unwrap_or(&current.kind);
 
         if char == '\n' {
+            // transition to new line
             fragments.push(current);
-            highlights.push(fragments);
+            lines.push(fragments);
             
             fragments = Vec::new();
             current = Fragment {
                 kind,
-                lint,
+                hint,
                 value: String::new()
             };
 
             continue;
         }
 
-        if kind == current.kind && lint == current.lint {
-            current.value.push(char);
-        } else {
-            fragments.push(current);
+        if kind != current.kind || hint != current.hint {
+            if !current.value.is_empty() {
+                fragments.push(current);
+            }
+                
             current = Fragment {
                 kind,
-                lint,
+                hint,
                 value: char.to_string()
-            }
+            };
+
+            continue;
         }
+       
+        current.value.push(char);
     }
 
     fragments.push(current);
-    highlights.push(fragments);
-
-    highlights
+    lines.push(fragments);
+    
+    Highlight {
+        lines,
+        hints: correction_map.hints
+    }
 }

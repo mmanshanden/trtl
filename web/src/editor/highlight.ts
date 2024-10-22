@@ -2,19 +2,20 @@ import { decode, DecodeResult } from "../wasm/benocde"
 import { Module, read_return_bytes_from_module, write_bytes_to_module } from "../wasm/wasm"
 
 type Style = 'keyword' | 'flow' |  'identifier' | 'number' | 'constant'
-type Lint = 'insert' | 'remove'
+type Error = 'insert' | 'remove'
 
 interface Fragment {
     value: string
     kind: Style
-    lint: Lint
+    error: Error
+    hint?: string
 }
 
 interface Line {
     fragments: Array<Fragment>
 }
 
-const translate_kind_to_style = (kind: number): Style | undefined => {
+const translate_kind = (kind: number): Style | undefined => {
     if (kind === 1) {
         return 'keyword'
     } else if (kind === 2) {
@@ -30,10 +31,10 @@ const translate_kind_to_style = (kind: number): Style | undefined => {
     }
 }
 
-const translate_lint_to_style = (lint: number): Lint | undefined => {
-    if (lint === 1) {
+const translate_hint = (lint: number): Error | undefined => {
+    if (lint > 1) {
         return 'insert'
-    } else if (lint === 2) {
+    } else if (lint === 1) {
         return 'remove'
     } else {
         return undefined
@@ -48,19 +49,20 @@ export const highlight = (module: Module, input: string): Line[] => {
     const ptr_to_output = module.exports.high(ptr_to_utf8, utf8.length) as number;
     const output = read_return_bytes_from_module(module, ptr_to_output);
 
-    const decoded = decode(output)
+    const [lines, hints] = decode(output).value
 
-    return decoded.value.map((line: Uint8Array[]) => {
+    return lines.map((line: Uint8Array[]) => {
         return {
             fragments: line.map((fragment: Uint8Array) => {
                 let kind = fragment[0]
-                let lint = fragment[1]
+                let hint = fragment[1]
                 let utf8 = fragment.subarray(2, fragment.length)
-    
+
                 return {
                     value: decoder.decode(utf8),
-                    kind: translate_kind_to_style(kind),
-                    lint: translate_lint_to_style(lint)
+                    kind: translate_kind(kind),
+                    error: translate_hint(hint),
+                    hint: hint > 1 ? decoder.decode(hints[hint]) : undefined
                 }
             })
         }

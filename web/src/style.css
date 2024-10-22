@@ -39,7 +39,8 @@ html, body {
   width: 100%;
   counter-reset: line;
   overflow-x: auto;
-  text-wrap: nowrap;;  
+  text-wrap: nowrap;  
+  white-space: pre;
 }
 
 
