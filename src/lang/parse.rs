@@ -522,6 +522,7 @@ fn parse_stmt<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Stmt> {
     // }
 }
 
+
 fn parse_func_params<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Vec<String>> {
     if run.token() != Token::LeftParen {
         return Err(run);

@@ -42,12 +42,16 @@ export const setContent = ({ module, element }: Editor, ...content: string[]) =>
     element.innerHTML = html
 }
 
-const getContent = ({ element }: Editor): string[] => {
+export const getContent = ({ element }: Editor): string[] => {
     const lines = Array.from(element.childNodes)
     return lines.map(node => node.textContent ?? "")
 }
 
-export const editor = (element: HTMLDivElement, module: Module): Editor => {
+export interface Callbacks {
+    contentChanged: (editor: Editor) => void,
+}
+
+export const editor = (element: HTMLDivElement, module: Module, callbacks: Callbacks): Editor => {
     element.innerHTML = `<div class="code-editor" contenteditable="true" spellcheck="false" />`
     const codeEditor = element.querySelector<HTMLDivElement>('div.code-editor')!
 
@@ -72,6 +76,8 @@ export const editor = (element: HTMLDivElement, module: Module): Editor => {
         if (caret) { 
             setCaret(state, caret.from)
         }
+
+        callbacks.contentChanged(state)
     })
 
     element.addEventListener("keydown", (e) => {

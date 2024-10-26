@@ -24,7 +24,6 @@ export const read_return_bytes_from_module = (module: Module, ptr: number): Uint
     const mem = new Uint8Array(module.memory.buffer);
     const ret_ptr = mem[ptr + 0] | mem[ptr + 1] << 8 | mem[ptr + 2] << 16 | mem[ptr + 3] << 24;
     const ret_len = mem[ptr + 4] | mem[ptr + 5] << 8 | mem[ptr + 6] << 16 | mem[ptr + 7] << 24;
-
     module.exports.mfree(ptr, 8)
 
     return read_bytes_from_module(module, ret_ptr, ret_len)
@@ -36,7 +35,7 @@ export const write_bytes_to_module = (module: Module, bytes: Uint8Array): number
     return ptr
 }
 
-export const loadModule = async (path: string) => {
+export const loadModule = async (path: string): Promise<Module> => {
     let module: Module | null = null
 
     const env = {
@@ -54,8 +53,9 @@ export const loadModule = async (path: string) => {
         }
     }
 
-    const data = fetch(path);
-    const wasm = await WebAssembly.instantiateStreaming(data, {
+    const response = await fetch(path);
+    const data = await response.arrayBuffer()
+    const wasm = await WebAssembly.instantiate(data, {
         env: env
     })
 

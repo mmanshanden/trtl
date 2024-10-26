@@ -6,6 +6,8 @@ use std::alloc::Layout;
 use bencode::benchode_highlight;
 use highlight::highlight;
 
+use crate::{lang::{ast::Program, compile::compile, lex::Lexer, parse::parse_program, run::Run}, machine::{canvas::Canvas, cpu::Cpu}};
+
 /// Converts a wasm memory to a string
 /// 
 unsafe fn read_string_from_mem(ptr: *mut u8, len: usize) -> String {
@@ -79,7 +81,55 @@ fn high(ptr: *mut u8, len: usize) -> *const u8 {
     };
 
     let mut bytes = Vec::new();
-    benchode_highlight(&mut bytes, highlight(&input));
+    let fragments = highlight(&input);
+    benchode_highlight(&mut bytes, fragments);
 
     return_bytes(bytes)
+}
+
+#[no_mangle]
+fn create_cpu(ptr: *mut u8, len: usize) -> *mut Cpu {
+    console_log("creating cpu".to_string());
+    std::panic::set_hook(Box::new(|panic_info| {
+        let out = panic_info.to_string();
+        console_error(&out)
+    }));
+
+    let input = unsafe { 
+        read_string_from_mem(ptr, len) 
+    };
+
+    let tokens = Lexer::new(&input).tokens();
+
+    let ast = match parse_program(Run::new(&tokens)) {
+        crate::lang::run::ParseResult::Err(_) => Program::new(),
+        crate::lang::run::ParseResult::Ok(ast, _) => ast
+    };
+
+    let code = compile(ast);
+
+    let cpu = Cpu::new(|str| console_log(str.to_string()), code);
+    let cpu = Box::new(cpu);
+
+    Box::into_raw(cpu)
+}
+
+#[no_mangle]
+pub unsafe fn destroy_cpu(cpu: *mut Cpu) {
+    drop(Box::from_raw(cpu));
+}
+
+#[no_mangle]
+pub unsafe fn cpu_exec(cpu: *mut Cpu, width: u32, height: u32, n: u32) -> *const u8 {
+    let mut cpu = Box::from_raw(cpu);
+
+    console_log(n.to_string());
+    let mut canvas = Canvas::new(width, height);
+    cpu.run_n(&mut canvas, n);
+
+    std::mem::forget(cpu);
+
+    let pixels = canvas.get_pixel_data();
+    let bytes = pixels.into_iter().flat_map(|pixel| pixel.to_le_bytes()).collect();
+    return_bytes(bytes) 
 }

@@ -230,7 +230,6 @@ impl Cpu {
                 self.turtle.forward(d);
                 let nx = self.turtle.x as i32;
                 let ny = self.turtle.y as i32;
-
                 canvas.draw_line(x, y, nx, ny, 0, 0, 0);
             }
             Op::Movl => {
@@ -249,10 +248,10 @@ impl Cpu {
         }
     }
 
-    pub fn run_n(&mut self, canvas: &mut Canvas, mut n: usize) {
+    pub fn run_n(&mut self, canvas: &mut Canvas, mut n: u32) {
         while n > 0 && !self.is_halted() {
             self.run(canvas);
-            n = n - 1;
+            n -= 1;
         }
     }
 }
