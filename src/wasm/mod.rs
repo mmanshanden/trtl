@@ -74,7 +74,7 @@ pub unsafe fn mfree(ptr: *mut u8, len: usize) {
 }
 
 #[no_mangle]
-pub unsafe fn high(ptr: *mut u8, len: usize) -> *const u8 {
+pub unsafe fn syntax_fragments(ptr: *mut u8, len: usize) -> *const u8 {
     std::panic::set_hook(Box::new(|panic_info| {
         let out = panic_info.to_string();
         console_error(&out)
@@ -110,12 +110,11 @@ pub unsafe fn destroy_canvas(canvas: *mut Canvas) {
 #[no_mangle]
 pub unsafe fn canvas_pixels(canvas: *mut Canvas) -> *const u8{
     let canvas = Box::from_raw(canvas);
-    let pixels = canvas.get_pixel_data();
-    let bytes = pixels.into_iter().flat_map(|pixel| pixel.to_le_bytes()).collect();
+    let pixels = canvas.get_pixel_data().clone();
 
     std::mem::forget(canvas);
 
-    return_bytes(bytes)
+    return_bytes(pixels)
 }
 
 
@@ -151,7 +150,7 @@ pub unsafe fn destroy_cpu(cpu: *mut Cpu) {
 }
 
 #[no_mangle]
-pub unsafe fn cpu_exec(cpu: *mut Cpu, canvas: *mut Canvas, n: u32) {
+pub unsafe fn cpu_run(cpu: *mut Cpu, canvas: *mut Canvas, n: u32) {
     let mut cpu = Box::from_raw(cpu);
     let mut canvas = Box::from_raw(canvas);
 

@@ -1,13 +1,13 @@
 import { Canvas } from './canvas'
-import { Module, write_bytes_to_module } from './wasm'
+import { WasmModule, write_bytes_to_module } from './wasm'
 
 const encoder = new TextEncoder()
 
 export class Cpu {
     ptr: number
-    module: Module
+    module: WasmModule
 
-    constructor(module: Module, input: string) {
+    constructor(module: WasmModule, input: string) {
         const utf8 = encoder.encode(input)
         const ptr_to_utf8 = write_bytes_to_module(module, utf8)
 
@@ -18,7 +18,7 @@ export class Cpu {
     run(canvas: Canvas, n: number) {
         if (this.ptr < 0) return
 
-        this.module.exports.cpu_exec(this.ptr, canvas.ptr, n)
+        this.module.exports.cpu_run(this.ptr, canvas.ptr, n)
     }
 
     destroy() {

@@ -81,9 +81,11 @@ renderer.addEventListener('message', (e) => {
     }
 
     const image = e.data as ImageData
-    console.log("rendering to canvas", image)
     const context = canvasElement.getContext("2d")
-    context?.putImageData(image, 0, 0);
+
+    if (context) {
+        context.putImageData(image, 0, 0);
+    }
 })
 
 window.addEventListener("resize", (e) => {

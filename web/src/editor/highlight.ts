@@ -1,5 +1,5 @@
 import { decode, DecodeResult } from "../wasm/benocde"
-import { Module, read_return_bytes_from_module, write_bytes_to_module } from "../wasm/wasm"
+import { WasmModule, read_return_bytes_from_module, write_bytes_to_module } from "../wasm/wasm"
 
 type Style = 'keyword' | 'flow' |  'identifier' | 'number' | 'constant'
 type Error = 'insert' | 'remove'
@@ -41,12 +41,12 @@ const translate_hint = (lint: number): Error | undefined => {
     }
 }
 
-export const highlight = (module: Module, input: string): Line[] => {
+export const highlight = (module: WasmModule, input: string): Line[] => {
     const decoder = new TextDecoder('utf-8')
 
     const utf8 = new TextEncoder().encode(input)
     const ptr_to_utf8 = write_bytes_to_module(module, utf8)
-    const ptr_to_output = module.exports.high(ptr_to_utf8, utf8.length) as number;
+    const ptr_to_output = module.exports.syntax_fragments(ptr_to_utf8, utf8.length);
     const output = read_return_bytes_from_module(module, ptr_to_output);
 
     const [lines, hints] = decode(output).value

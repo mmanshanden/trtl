@@ -1,12 +1,29 @@
 
-type Export = (...args: number[]) => (void | number)
+type WasmPtr = number
 
-export interface Module {
-    exports: Record<string, Export>
+export interface WasmExports {
+    malloc: (len: number) => WasmPtr,
+    mfree: (ptr: WasmPtr, len: number) => void,
+    
+    syntax_fragments: (ptr: WasmPtr, len: number) => WasmPtr,
+    
+    create_cpu: (ptr: WasmPtr, len: number) => WasmPtr,
+    create_canvas: (width: number, height: number) => WasmPtr,
+
+    destroy_cpu: (ptr: WasmPtr) => void,
+    destroy_canvas: (ptr: WasmPtr) => void,
+
+    cpu_run: (ptr_cpu: WasmPtr, ptr_canvas: WasmPtr, n: number) => void,
+    
+    canvas_pixels: (ptr_cpu: WasmPtr) => WasmPtr
+}
+
+export interface WasmModule {
+    exports: WasmExports
     memory: WebAssembly.Memory
 }
 
-const read_bytes_from_module = (module: Module, ptr: number, len: number, cap: number): Uint8Array => {
+const read_bytes_from_module = (module: WasmModule, ptr: number, len: number, cap: number): Uint8Array => {
     const mem = new Uint8Array(module.memory.buffer, ptr, len);
     const bytes = new Uint8Array(mem.length)
 
@@ -16,35 +33,33 @@ const read_bytes_from_module = (module: Module, ptr: number, len: number, cap: n
     return bytes
 }
 
-export const read_return_bytes_from_module = (module: Module, ptr: number): Uint8Array => {
-    const mem = new Uint8Array(module.memory.buffer);
-    const ret_ptr = mem[ptr + 0] | mem[ptr + 1] << 8 | mem[ptr + 2] << 16 | mem[ptr + 3] << 24;
-    const ret_len = mem[ptr + 4] | mem[ptr + 5] << 8 | mem[ptr + 6] << 16 | mem[ptr + 7] << 24;
-    const ret_cap = mem[ptr + 8] | mem[ptr + 9] << 8 | mem[ptr + 10] << 16 | mem[ptr + 11] << 24;
+export const read_return_bytes_from_module = (module: WasmModule, ptr: number): Uint8Array => {
+    const mem = new Uint32Array(module.memory.buffer, ptr, 3)
+    const buffer_ptr = mem[0]
+    const buffer_len = mem[1]
+    const buffer_cap = mem[2]
     module.exports.mfree(ptr, 12)
 
-    console.log("reading", ret_ptr, ret_len)
-
-    return read_bytes_from_module(module, ret_ptr, ret_len, ret_cap)
+    return read_bytes_from_module(module, buffer_ptr, buffer_len, buffer_cap)
 }
 
-export const write_bytes_to_module = (module: Module, bytes: Uint8Array): number => {
+export const write_bytes_to_module = (module: WasmModule, bytes: Uint8Array): number => {
     const ptr = module.exports.malloc(bytes.length) as number
     new Uint8Array(module.memory.buffer).set(bytes, ptr)
     return ptr
 }
 
-export const load_module = async (path: string): Promise<Module> => {
-    let module: Module | null = null
+export const load_module = async (path: string): Promise<WasmModule> => {
+    let module: WasmModule | null = null
 
     const env = {
-        alert: (ptr: number, len: number, cap: number) => {
+        alert: (ptr: WasmPtr, len: number, cap: number) => {
             if (!module) return
             const bytes = read_bytes_from_module(module, ptr, len, cap)
             const decoded = new TextDecoder('utf-8').decode(bytes)
             console.error(decoded)
         },
-        print: (ptr: number, len: number, cap: number) => {
+        print: (ptr: WasmPtr, len: number, cap: number) => {
             if (!module) return
             const bytes = read_bytes_from_module(module, ptr, len, cap)
             const decoded = new TextDecoder('utf-8').decode(bytes)
@@ -59,7 +74,7 @@ export const load_module = async (path: string): Promise<Module> => {
     })
 
     module = {
-        exports: wasm.instance.exports as Record<string, Export>,
+        exports: (wasm.instance.exports as unknown) as WasmExports,
         memory: wasm.instance.exports.memory as WebAssembly.Memory
     }
 

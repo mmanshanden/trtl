@@ -1,4 +1,4 @@
-import { Module } from '../wasm/wasm'
+import { WasmModule } from '../wasm/wasm'
 import { getCaret, selectCurrentLine, setCaret } from './caret'
 import { highlight } from './highlight'
 import { KeyMap, pressKey, releaseKey } from './keymap'
@@ -7,7 +7,7 @@ import { KeyMap, pressKey, releaseKey } from './keymap'
 export interface Editor {
     element: HTMLDivElement
     keyMap: KeyMap
-    module: Module
+    module: WasmModule
 }
 
 const ignoredKeys = ["ArrowUp", "ArrowLeft", "ArrowRight", "ArrowDown", "Control", "Shift", "Alt", "CapsLock"]
@@ -51,7 +51,7 @@ export interface Callbacks {
     contentChanged: (editor: Editor) => void,
 }
 
-export const editor = (element: HTMLDivElement, module: Module, callbacks: Callbacks): Editor => {
+export const editor = (element: HTMLDivElement, module: WasmModule, callbacks: Callbacks): Editor => {
     element.innerHTML = `<div class="code-editor" contenteditable="true" spellcheck="false" />`
     const codeEditor = element.querySelector<HTMLDivElement>('div.code-editor')!
 
