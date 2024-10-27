@@ -1,23 +1,38 @@
-import { Cpu, cpuExec, createCpu, destroyCpu } from "./wasm/cpu"
-import { loadModule } from "./wasm/wasm"
+import { Canvas } from "./wasm/canvas"
+import { Cpu } from "./wasm/cpu"
+import { load_module } from "./wasm/wasm"
 
-const module = await loadModule('../wasm/wasm32-unknown-unknown/debug/trtl.wasm')
+const module = await load_module('../wasm/wasm32-unknown-unknown/debug/trtl.wasm')
 
 let cpu: Cpu | null = null
+let canvas: Canvas | null = null
+
+export interface RenderCall {
+    input: string,
+    width: number,
+    height: number
+}
 
 onmessage = async (e) => {
     if (cpu != null) {
-        console.log("destroying cpu at", cpu.ptr)
-        destroyCpu(cpu)
+        cpu.destroy()
     }
 
-    cpu = createCpu(module, e.data)
-    console.log("new cpu at", cpu?.ptr)
+    if (canvas != null) {
+        canvas.destroy()
+    }
 
-    if (cpu) {
-        const canvas = cpuExec(cpu, 100000);
-        const image = new ImageData(new Uint8ClampedArray(canvas), 512, 512)
-        
+    const { input, width, height } = e.data as RenderCall
+
+    cpu = new Cpu(module, input)
+    canvas = new Canvas(module, width, height)
+    
+    cpu.run(canvas, 100000);
+
+    const bytes = canvas.get_bytes()
+
+    if (bytes) {
+        const image = new ImageData(bytes, width, height)
         postMessage(image)
     }
 }

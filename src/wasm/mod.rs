@@ -12,7 +12,7 @@ use crate::{lang::{ast::Program, compile::compile, lex::Lexer, parse::parse_prog
 /// 
 unsafe fn read_string_from_mem(ptr: *mut u8, len: usize) -> String {
     let bytes = Vec::from_raw_parts(ptr, len, len);
-    std::str::from_utf8(&bytes).unwrap().to_string()
+    String::from_utf8_lossy(&bytes).to_string()
 }
 
 /// Allows the provided bytes to be read by the client. 
@@ -70,26 +70,53 @@ pub unsafe fn mfree(ptr: *mut u8, len: usize) {
 }
 
 #[no_mangle]
-fn high(ptr: *mut u8, len: usize) -> *const u8 {
+pub unsafe fn high(ptr: *mut u8, len: usize) -> *const u8 {
     std::panic::set_hook(Box::new(|panic_info| {
         let out = panic_info.to_string();
         console_error(&out)
     }));
 
-    let input = unsafe { 
-        read_string_from_mem(ptr, len) 
-    };
-
+    let input = read_string_from_mem(ptr, len);
     let mut bytes = Vec::new();
     let fragments = highlight(&input);
+
     benchode_highlight(&mut bytes, fragments);
 
     return_bytes(bytes)
 }
 
 #[no_mangle]
+pub unsafe fn create_canvas(width: u32, height: u32) -> *mut Canvas {
+    std::panic::set_hook(Box::new(|panic_info| {
+        let out = panic_info.to_string();
+        console_error(&out)
+    }));
+
+    let canvas = Canvas::new(width, height);
+    let canvas = Box::new(canvas);
+
+    Box::into_raw(canvas)
+}
+
+#[no_mangle]
+pub unsafe fn destroy_canvas(canvas: *mut Canvas) {
+    drop(Box::from_raw(canvas))
+}
+
+#[no_mangle]
+pub unsafe fn canvas_pixels(canvas: *mut Canvas) -> *const u8{
+    let canvas = Box::from_raw(canvas);
+    let pixels = canvas.get_pixel_data();
+    let bytes = pixels.into_iter().flat_map(|pixel| pixel.to_le_bytes()).collect();
+
+    std::mem::forget(canvas);
+
+    return_bytes(bytes)
+}
+
+
+#[no_mangle]
 fn create_cpu(ptr: *mut u8, len: usize) -> *mut Cpu {
-    console_log("creating cpu".to_string());
     std::panic::set_hook(Box::new(|panic_info| {
         let out = panic_info.to_string();
         console_error(&out)
@@ -120,16 +147,12 @@ pub unsafe fn destroy_cpu(cpu: *mut Cpu) {
 }
 
 #[no_mangle]
-pub unsafe fn cpu_exec(cpu: *mut Cpu, width: u32, height: u32, n: u32) -> *const u8 {
+pub unsafe fn cpu_exec(cpu: *mut Cpu, canvas: *mut Canvas, n: u32) {
     let mut cpu = Box::from_raw(cpu);
+    let mut canvas = Box::from_raw(canvas);
 
-    console_log(n.to_string());
-    let mut canvas = Canvas::new(width, height);
     cpu.run_n(&mut canvas, n);
 
     std::mem::forget(cpu);
-
-    let pixels = canvas.get_pixel_data();
-    let bytes = pixels.into_iter().flat_map(|pixel| pixel.to_le_bytes()).collect();
-    return_bytes(bytes) 
+    std::mem::forget(canvas);
 }

@@ -1,9 +1,7 @@
 
 use std::vec;
 
-use crate::lang::ast::{Program, Stmt, Entry};
-
-use super::{console_log, highlight::{Fragment, Highlight, Line}};
+use super::highlight::{Fragment, Highlight, Line};
 
 fn bencode_str(out: &mut Vec<u8>, bytes: &[u8]) {
     let mut len: Vec<u8> = bytes.len().to_string().bytes().collect();

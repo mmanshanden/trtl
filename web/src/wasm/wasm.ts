@@ -35,7 +35,7 @@ export const write_bytes_to_module = (module: Module, bytes: Uint8Array): number
     return ptr
 }
 
-export const loadModule = async (path: string): Promise<Module> => {
+export const load_module = async (path: string): Promise<Module> => {
     let module: Module | null = null
 
     const env = {

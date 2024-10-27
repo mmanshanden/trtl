@@ -43,7 +43,6 @@ html, body {
   white-space: pre;
 }
 
-
 .code-editor div.ln::before {
   counter-increment: line;
   content: counter(line);
@@ -75,4 +74,7 @@ html, body {
   border-bottom: 1px dotted red;
 }
 
-
+#canvas {
+  width: 100%;
+  height: 100%;
+}

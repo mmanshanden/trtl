@@ -1,6 +1,14 @@
 import './style.css'
 import { Editor, editor, getContent, setContent } from './editor/editor';
-import { loadModule } from './wasm/wasm';
+import { load_module } from './wasm/wasm';
+
+
+const module = await load_module('wasm/wasm32-unknown-unknown/debug/trtl.wasm')
+const editorElement = document.querySelector<HTMLDivElement>("div#editor")!;
+const canvasElement = document.querySelector<HTMLCanvasElement>("canvas#canvas")!;
+
+canvasElement.width = canvasElement.parentElement?.clientWidth ?? 512;
+canvasElement.height = canvasElement.parentElement?.clientHeight ?? 512;
 
 const renderer = new Worker(new URL('./renderer.ts', import.meta.url), {
     type: 'module'
@@ -8,12 +16,12 @@ const renderer = new Worker(new URL('./renderer.ts', import.meta.url), {
 
 const runCpu = (editor: Editor) => {
     const input = getContent(editor).join('\n')
-    renderer.postMessage(input)
+    renderer.postMessage({
+        input,
+        width: canvasElement.width,
+        height: canvasElement.height
+    })
 }
-
-const module = await loadModule('wasm/wasm32-unknown-unknown/debug/trtl.wasm')
-const editorElement = document.querySelector<HTMLDivElement>("div#editor");
-const canvasElement = document.querySelector<HTMLCanvasElement>("canvas#canvas");
 
 if (editorElement && module) {
     const e = editor(editorElement, module, {
@@ -56,7 +64,7 @@ if (editorElement && module) {
         "    left 180;",
         "}",
         "",
-        "i = 5;",
+        "i = min(0, 5);",
         "",
         "while 1 > 0 {",
         "    triangle(i, 300);",
@@ -76,4 +84,9 @@ renderer.addEventListener('message', (e) => {
     console.log("rendering to canvas", image)
     const context = canvasElement.getContext("2d")
     context?.putImageData(image, 0, 0);
+})
+
+window.addEventListener("resize", (e) => {
+    canvasElement.width = canvasElement.parentElement?.clientWidth ?? 512;
+    canvasElement.height = canvasElement.parentElement?.clientHeight ?? 512;
 })
