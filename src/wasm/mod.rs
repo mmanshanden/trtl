@@ -1,12 +1,12 @@
 pub mod bencode;
 pub mod highlight;
 
-use std::alloc::Layout;
+use std::{alloc::Layout};
 
 use bencode::benchode_highlight;
 use highlight::highlight;
 
-use crate::{lang::{ast::Program, compile::compile, lex::Lexer, parse::parse_program, run::Run}, machine::{canvas::Canvas, cpu::Cpu}};
+use crate::{lang::{ast::Program, compile::compile, lex::Lexer, parse::parse_program, run::Run}, machine::{canvas::{self, Canvas}, cpu::Cpu}};
 
 /// Converts a wasm memory to a string
 /// 
@@ -22,7 +22,13 @@ unsafe fn read_string_from_mem(ptr: *mut u8, len: usize) -> String {
 /// length of the provided bytes.
 /// 
 fn return_bytes(bytes: Vec<u8>) -> *const u8 {
-    let buf = vec![bytes.as_ptr() as usize, bytes.len()];
+    let ptr = bytes.as_ptr() as usize;
+    let buf = vec![
+        ptr,
+        bytes.len(),
+        bytes.capacity()
+    ];
+
     let ptr = buf.as_ptr();
 
     std::mem::forget(buf);
@@ -32,15 +38,15 @@ fn return_bytes(bytes: Vec<u8>) -> *const u8 {
 }
 
 extern "C" {
-    fn print(start: usize, len: usize);
-    fn alert(start: usize, len: usize);
+    fn print(start: usize, len: usize, cap: usize);
+    fn alert(start: usize, len: usize, cap: usize);
 }
 
 fn console_log(msg: String) {
     let ptr = msg.as_ptr();
     let len = msg.len();
     unsafe {
-        print(ptr as usize, len);
+        print(ptr as usize, len, len);
     }
 }
 
@@ -48,11 +54,9 @@ fn console_error(msg: &str) {
     let ptr = msg.as_ptr();
     let len = msg.len();
     unsafe {
-        alert(ptr as usize, len);
+        alert(ptr as usize, len, len);
     }
 }
-
-
 
 #[no_mangle]
 pub unsafe fn malloc(len: usize) -> *const u8 {
