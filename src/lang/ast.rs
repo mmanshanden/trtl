@@ -17,7 +17,7 @@ pub enum Expr {
     Div(Box<Expr>, Box<Expr>),
 
     Var(String),
-    Num(f32),
+    Num(f64),
     Call(String, Vec<Expr>),
 }
 

@@ -7,7 +7,7 @@ use super::turtle::Turtle;
 pub enum Op {
     Label(String),
     Ajs(i32),
-    PushF(u32),
+    PushF(u64),
     Goto(String),
     Add,
     Sub,
@@ -41,14 +41,14 @@ pub enum Op {
 pub struct Cpu {
     stdout: fn(&str) -> (),
     turtle: Turtle,
-    labels: HashMap<String, u32>,
+    labels: HashMap<String, u64>,
     code: Vec<Op>,
     halted: bool,
-    stack: [u32; 4096],
-    ip: u32,
-    sp: u32,
-    fp: u32,
-    rr: u32,
+    stack: [u64; 4096],
+    ip: u64,
+    sp: u64,
+    fp: u64,
+    rr: u64,
 }
 
 impl Cpu {
@@ -57,7 +57,7 @@ impl Cpu {
 
         for (i, c) in code.iter().enumerate() {
             if let Op::Label(l) = c {
-                labels.insert(l.to_string(), i as u32);
+                labels.insert(l.to_string(), i as u64);
             }
         }
 
@@ -75,22 +75,22 @@ impl Cpu {
         }
     }
 
-    fn pop_float(&mut self) -> f32 {
+    fn pop_float(&mut self) -> f64 {
         let bits = self.pop();
-        f32::from_bits(bits)
+        f64::from_bits(bits)
     }
 
-    fn push_float(&mut self, val: f32) {
+    fn push_float(&mut self, val: f64) {
         let bits = val.to_bits();
         self.push(bits);
     }
 
-    fn pop(&mut self) -> u32 {
+    fn pop(&mut self) -> u64 {
         self.sp -= 1;
         self.stack[self.sp as usize]
     }
 
-    fn push(&mut self, val: u32) {
+    fn push(&mut self, val: u64) {
         self.stack[self.sp as usize] = val;
         self.sp += 1;
     }
@@ -155,7 +155,7 @@ impl Cpu {
             Op::Eq => {
                 let b = self.pop_float();
                 let a = self.pop_float();
-                if (a - b).abs() < f32::EPSILON {
+                if (a - b).abs() < f64::EPSILON {
                     self.push_float(1.0);
                 } else {
                     self.push_float(0.0);
@@ -164,17 +164,17 @@ impl Cpu {
             Op::Neq => {
                 let b = self.pop_float();
                 let a = self.pop_float();
-                if (a - b).abs() > f32::EPSILON {
+                if (a - b).abs() > f64::EPSILON {
                     self.push_float(1.0);
                 } else {
                     self.push_float(0.0);
                 }
             }
             Op::Ajs(n) => {
-                self.sp = (self.sp as i32 + n) as u32;
+                self.sp = (self.sp as i32 + n) as u64;
             }
             Op::Bra(n) => {
-                self.ip = (self.ip as i32 + n) as u32;
+                self.ip = (self.ip as i32 + n) as u64;
             }
             Op::Label(_) => {}
             Op::LoadG(adr) => {
@@ -214,7 +214,7 @@ impl Cpu {
             }
             Op::Brf(n) => {
                 if self.pop() == 0 {
-                    self.ip = (self.ip as i32 + n) as u32;
+                    self.ip = (self.ip as i32 + n) as u64;
                 }
             }
             Op::Print => {
@@ -223,14 +223,14 @@ impl Cpu {
                 (self.stdout)(&msg);
             }
             Op::Movf => {
-                let x = self.turtle.x as i32;
-                let y = self.turtle.y as i32;
+                let x1 = self.turtle.x as i32;
+                let y1 = self.turtle.y as i32;
                 let d = self.pop_float();
 
                 self.turtle.forward(d);
-                let nx = self.turtle.x as i32;
-                let ny = self.turtle.y as i32;
-                canvas.draw_line(x, y, nx, ny, 0, 0, 0);
+                let x2 = self.turtle.x as i32;
+                let y2 = self.turtle.y as i32;
+                canvas.draw_line(x1, y1, x2, y2, 0, 0, 0);
             }
             Op::Movl => {
                 let a = self.pop_float();
