@@ -17,15 +17,18 @@ export class Cpu {
 
     run(canvas: Canvas, n: number) {
         if (this.ptr < 0) return
-
         this.module.exports.cpu_run(this.ptr, canvas.ptr, n)
     }
 
     destroy() {
         if (this.ptr < 0) return
-
         this.module.exports.destroy_cpu(this.ptr);
         this.ptr = -1;
+    }
+
+    is_halted(): boolean {
+        if (this.ptr < 0) return true
+        return this.module.exports.cpu_is_halted(this.ptr) > 0
     }
 }
 

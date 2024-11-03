@@ -100,6 +100,11 @@ impl Cpu {
     }
 
     pub fn run(&mut self, canvas: &mut Canvas) {
+        if self.ip as usize == self.code.len() {
+            self.halted = true;
+            return;
+        }
+
         // get current operation
         let op = self.code[self.ip as usize].clone();
 
@@ -199,7 +204,10 @@ impl Cpu {
                 self.push(self.ip);
                 self.push(self.fp);
                 self.fp = self.sp;
-                self.ip = self.labels[&l];
+                self.ip = match self.labels.get(&l) {
+                    Some(&ip) => ip,
+                    None => self.code.len() as u64
+                }
             }
             Op::Ret => {
                 self.sp = self.fp;
@@ -242,10 +250,6 @@ impl Cpu {
             }
             _ => panic!("Operation {:?} not implemented", op),
         };
-
-        if self.ip as usize == self.code.len() {
-            self.halted = true;
-        }
     }
 
     pub fn run_n(&mut self, canvas: &mut Canvas, mut n: u32) {

@@ -60,17 +60,18 @@ fn console_error(msg: &str) {
 
 #[no_mangle]
 pub unsafe fn malloc(len: usize) -> *const u8 {
-    let align = std::mem::align_of::<usize>();
-    let layout = Layout::from_size_align_unchecked(len, align);
+    let buffer = Vec::with_capacity(len);
+    let ptr = buffer.as_ptr();
 
-    std::alloc::alloc_zeroed(layout)
+    std::mem::forget(buffer);
+
+    ptr
 }
 
 #[no_mangle]
 pub unsafe fn mfree(ptr: *mut u8, len: usize) {
-    let align = std::mem::align_of::<usize>();
-    let layout = Layout::from_size_align_unchecked(len, align);
-    std::alloc::dealloc(ptr, layout);
+    let buffer = Vec::from_raw_parts(ptr, len, len);
+    drop(buffer)
 }
 
 #[no_mangle]
@@ -117,6 +118,13 @@ pub unsafe fn canvas_pixels(canvas: *mut Canvas) -> *const u8{
     return_bytes(pixels)
 }
 
+#[no_mangle]
+pub unsafe fn canvas_clear(canvas: *mut Canvas) {
+    let mut canvas = Box::from_raw(canvas);
+    canvas.clear();
+
+    std::mem::forget(canvas);
+}
 
 #[no_mangle]
 fn create_cpu(ptr: *mut u8, len: usize) -> *mut Cpu {
@@ -136,7 +144,7 @@ fn create_cpu(ptr: *mut u8, len: usize) -> *mut Cpu {
         crate::lang::run::ParseResult::Ok(ast, _) => ast
     };
 
-    let code = compile(ast);
+    let code = compile(ast).unwrap_or_default();
 
     let cpu = Cpu::new(|str| console_log(str.to_string()), code);
     let cpu = Box::new(cpu);
@@ -151,6 +159,11 @@ pub unsafe fn destroy_cpu(cpu: *mut Cpu) {
 
 #[no_mangle]
 pub unsafe fn cpu_run(cpu: *mut Cpu, canvas: *mut Canvas, n: u32) {
+    std::panic::set_hook(Box::new(|panic_info| {
+        let out = panic_info.to_string();
+        console_error(&out)
+    }));
+
     let mut cpu = Box::from_raw(cpu);
     let mut canvas = Box::from_raw(canvas);
 
@@ -158,4 +171,14 @@ pub unsafe fn cpu_run(cpu: *mut Cpu, canvas: *mut Canvas, n: u32) {
 
     std::mem::forget(cpu);
     std::mem::forget(canvas);
+}
+
+#[no_mangle]
+pub unsafe fn cpu_is_halted(cpu: *mut Cpu) -> u8 {
+    let cpu = Box::from_raw(cpu);
+    let halted = cpu.is_halted();
+
+    std::mem::forget(cpu);
+
+    halted as u8
 }

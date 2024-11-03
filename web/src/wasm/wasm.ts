@@ -14,8 +14,10 @@ export interface WasmExports {
     destroy_canvas: (ptr: WasmPtr) => void,
 
     cpu_run: (ptr_cpu: WasmPtr, ptr_canvas: WasmPtr, n: number) => void,
+    cpu_is_halted: (ptr_cpu: WasmPtr) => number,
     
-    canvas_pixels: (ptr_cpu: WasmPtr) => WasmPtr
+    canvas_pixels: (ptr_canvas: WasmPtr) => WasmPtr
+    canvas_clear: (ptr_canvas: WasmPtr) => void
 }
 
 export interface WasmModule {
@@ -33,7 +35,8 @@ const read_bytes_from_module = (module: WasmModule, ptr: number, len: number, ca
     return bytes
 }
 
-export const read_return_bytes_from_module = (module: WasmModule, ptr: number): Uint8Array => {
+export const read_return_bytes_from_module = (module: WasmModule, ptr: number, who?: string): Uint8Array => {
+    if (who) console.log(who)
     const mem = new Uint32Array(module.memory.buffer, ptr, 3)
     const buffer_ptr = mem[0]
     const buffer_len = mem[1]

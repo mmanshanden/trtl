@@ -16,30 +16,20 @@ export class Canvas {
 
     get_bytes(): Uint8Array | null {
         if (this.ptr < 0) return null
-
-        let startTime, endTime;
-        startTime = performance.now()
-
         const ptr = this.module.exports.canvas_pixels(this.ptr)
-        
-        endTime = performance.now()
-
-        console.log(`Call to wasm.get_pixels ${endTime - startTime} milliseconds`)
-        
-        startTime = performance.now()
-
-        const pixels = read_return_bytes_from_module(this.module, ptr)
-        
-        endTime = performance.now()
-
-        console.log(`Call to wasm.read ${endTime - startTime} milliseconds`)
+        const pixels = read_return_bytes_from_module(this.module, ptr, "pixels")
 
         return pixels
+    }
+
+    clear() {
+        this.module.exports.canvas_clear(this.ptr)
     }
 
     destroy() {
         if (this.ptr < 0) return null
 
+        console.log("destroying canvas")
         this.module.exports.destroy_canvas(this.ptr)
         this.ptr = -1
     }

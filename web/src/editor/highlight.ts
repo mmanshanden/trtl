@@ -47,7 +47,7 @@ export const highlight = (module: WasmModule, input: string): Line[] => {
     const utf8 = new TextEncoder().encode(input)
     const ptr_to_utf8 = write_bytes_to_module(module, utf8)
     const ptr_to_output = module.exports.syntax_fragments(ptr_to_utf8, utf8.length);
-    const output = read_return_bytes_from_module(module, ptr_to_output);
+    const output = read_return_bytes_from_module(module, ptr_to_output, "highlight");
 
     const [lines, hints] = decode(output).value
 

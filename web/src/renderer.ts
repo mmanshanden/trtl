@@ -8,6 +8,8 @@ let cpu: Cpu | null = null
 let canvas: Canvas | null = null
 let sprite: ImageData | null = null
 
+let renderRequestId: number = 0;
+
 export interface RenderCall {
     input: string,
     width: number,
@@ -16,58 +18,41 @@ export interface RenderCall {
 
 const render = () => {
     if (cpu == null || canvas == null || sprite == null) {
-        return;
+        return
     }
 
-    let startTime, endTime;
-    startTime = performance.now()
+    if (cpu.is_halted()) {
+        return
+    }
 
-    cpu.run(canvas, 10_000)
-    
-    endTime = performance.now()
-
-    console.log(`Call to cpu.run took ${endTime - startTime} milliseconds`)
-
-    
-    startTime = performance.now()
-
+    cpu.run(canvas, 4_000)
     const bytes = canvas.get_bytes()
-    
-    endTime = performance.now()
-
-    console.log(`Call to canvas.get_bytes took ${endTime - startTime} milliseconds`)
-
 
     if (bytes) {
-        
-        startTime = performance.now()
-
         sprite.data.set(bytes)
-        
-        endTime = performance.now()
-
-        console.log(`Call to sprite.data.set took ${endTime - startTime} milliseconds`)
-
         postMessage(sprite)
     }
 
-    requestAnimationFrame(render)
+    renderRequestId = requestAnimationFrame(render)
 }
 
 onmessage = async (e) => {
-    if (cpu != null) {
-        cpu.destroy()
-    }
-
-    if (canvas != null) {
-        canvas.destroy()
+    if (renderRequestId != 0) {
+        cancelAnimationFrame(renderRequestId)
     }
 
     const { input, width, height } = e.data as RenderCall
 
+    cpu?.destroy()
     cpu = new Cpu(module, input)
-    canvas = new Canvas(module, width, height)
-    sprite = new ImageData(width, height)
+
+    if (canvas == null || canvas.width != width && canvas.height != height) {
+        canvas?.destroy()
+        canvas = new Canvas(module, width, height)
+        sprite = new ImageData(width, height)
+    } else {
+        canvas.clear()
+    }
 
     render()
 }

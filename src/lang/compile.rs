@@ -23,20 +23,28 @@ type Env = HashMap<String, Loc>;
 type Ptr = i32;
 type Allocs = i32;
 
-fn compile_call(func: String, exprs: Vec<Expr>, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<Op>, Ptr, Allocs)  {
+pub enum CompileError {
+    UndefinedVariable(String),
+    UndefinedAssignment,
+    UnsupportedExpression,
+}
+
+type CompileResult = Result<(Vec<Op>, Ptr, Allocs), CompileError>;
+
+fn compile_call(func: String, args: Vec<Expr>, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult  {
     let mut allocs = 0;
     let mut ptr = ptr;
     let mut code = Vec::new();
     
-    let len = exprs.len() as i32;
+    let len = args.len() as i32;
     let name = func.as_str();
 
-    for expr in exprs.into_iter().rev() {
-        let out = compile_expr(expr, env, ptr, scope);
+    for expr in args.into_iter().rev() {
+        let (expr_code, expr_ptr, expr_allocs) = compile_expr(expr, env, ptr, scope)?;
 
-        code.extend(out.0);
-        ptr += out.1;
-        allocs += out.2;
+        code.extend(expr_code);
+        ptr += expr_ptr;
+        allocs += expr_allocs;
     }
 
     match (name, len) {
@@ -50,26 +58,26 @@ fn compile_call(func: String, exprs: Vec<Expr>, env: &mut Env, ptr: Ptr, scope: 
         }
     }  
 
-    (code, ptr, allocs)
+    Ok((code, ptr, allocs))
 }
 
-fn compile_binary_expr(e1: Expr, e2: Expr, operand: Op, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<Op>, Ptr, Allocs) {
-    let (c1, ptr1, as1) = compile_expr(e1, env, ptr, scope);
-    let (c2, ptr2, as2) = compile_expr(e2, env , ptr1, scope);
+fn compile_binary_expr(e1: Expr, e2: Expr, operand: Op, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult {
+    let (c1, ptr1, as1) = compile_expr(e1, env, ptr, scope)?;
+    let (c2, ptr2, as2) = compile_expr(e2, env , ptr1, scope)?;
 
     let mut code = Vec::new();
     code.extend(c1);
     code.extend(c2);
     code.push(operand);
 
-    (code, ptr2, as1 + as2)
+    Ok((code, ptr2, as1 + as2))
 }
 
-fn compile_expr(expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<Op>, Ptr, Allocs) {
+fn compile_expr(expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult{
     return match expr {
         Expr::Num(n) => {
             let n = n.to_bits();
-            (vec![Op::PushF(n)], ptr, 0)
+            Ok((vec![Op::PushF(n)], ptr, 0))
         },
         Expr::Add(e1, e2) => {
             compile_binary_expr(*e1, *e2, Op::Add, env, ptr, scope)
@@ -102,20 +110,20 @@ fn compile_expr(expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<
             compile_binary_expr(*e1, *e2, Op::Neq, env, ptr, scope)
         },
         Expr::Var(v) => match env.get(&v) {
-            None => panic!("undefined variable \"{v}\""),
+            None => Err(CompileError::UndefinedVariable(v)),
             Some(l) => match l {
-                Loc::Global(a) => (vec![Op::LoadG(*a)], ptr, 0),
-                Loc::Local(a) => (vec![Op::LoadL(*a)], ptr, 0),
+                Loc::Global(a) => Ok((vec![Op::LoadG(*a)], ptr, 0)),
+                Loc::Local(a) => Ok((vec![Op::LoadL(*a)], ptr, 0)),
             }
         },
         Expr::Call(func, exprs) => {
             compile_call(func, exprs, env, ptr, scope)
         },
         Expr::Assign(v, e) => {
-            let (mut code, mut ptr, mut allocs) = compile_expr(*e, env, ptr, scope);
+            let (mut code, mut ptr, mut allocs) = compile_expr(*e, env, ptr, scope)?;
             let var = match *v {
                 Expr::Var(var) => var,
-                _ => panic!("Lhs of assign was not a variable")
+                _ => return Err(CompileError::UndefinedAssignment)
             };
 
             let loc = match env.get(&var) {
@@ -139,14 +147,13 @@ fn compile_expr(expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<
             });
 
             
-            (code, ptr, allocs)
+            Ok((code, ptr, allocs))
 
         }
-        _ => panic!("unsupported expression")
     };
 }
 
-fn compile_seq(seq: Vec<Stmt>, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<Op>, Ptr, Allocs) {
+fn compile_seq(seq: Vec<Stmt>, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult{
     let mut code = Vec::new();
 
     let mut inner_env = env.clone();
@@ -154,7 +161,7 @@ fn compile_seq(seq: Vec<Stmt>, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (V
     let mut allocs = ptr;
 
     for stmt in seq {
-        let (ops, p, a) = compile_stmt(stmt, &mut inner_env, inner_ptr, scope);
+        let (ops, p, a) = compile_stmt(stmt, &mut inner_env, inner_ptr, scope)?;
 
         code.extend(ops);
 
@@ -162,28 +169,28 @@ fn compile_seq(seq: Vec<Stmt>, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (V
         allocs = p.max(a);
     }
 
-    (code, ptr, allocs)
+    Ok((code, ptr, allocs))
 }
 
-fn compile_if(cond: Expr, body: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<Op>, Ptr, Allocs) {
+fn compile_if(cond: Expr, body: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult{
     let mut code = Vec::new();
 
-    let (expr, ptr, a1) = compile_expr(cond, env, ptr, scope);
-    let (body, _, a2) = compile_stmt(body, env, ptr, scope);
+    let (expr, ptr, a1) = compile_expr(cond, env, ptr, scope)?;
+    let (body, _, a2) = compile_stmt(body, env, ptr, scope)?;
     
     code.extend(expr);
     code.push(Op::Brf(body.len() as i32));
     code.extend(body);
 
-    (code, ptr, a1 + a2)
+    Ok((code, ptr, a1 + a2))
 }
 
-fn compile_ifelse(cond: Expr, b1: Stmt, b2: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<Op>, Ptr, Allocs) {
+fn compile_ifelse(cond: Expr, b1: Stmt, b2: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult{
     let mut code = Vec::new();
 
-    let (e1, ptr, a1) = compile_expr(cond, env, ptr, scope);
-    let (b1, _, a2) = compile_stmt(b1, env, ptr, scope);
-    let (b2, _, a3) = compile_stmt(b2, env, ptr, scope);
+    let (e1, ptr, a1) = compile_expr(cond, env, ptr, scope)?;
+    let (b1, _, a2) = compile_stmt(b1, env, ptr, scope)?;
+    let (b2, _, a3) = compile_stmt(b2, env, ptr, scope)?;
     
     code.extend(e1);
     code.push(Op::Brf(1 + b1.len() as i32));
@@ -191,24 +198,24 @@ fn compile_ifelse(cond: Expr, b1: Stmt, b2: Stmt, env: &mut Env, ptr: Ptr, scope
     code.push(Op::Bra(b2.len() as i32));
     code.extend(b2);
 
-    (code, ptr, i32::max(a1 + a2, a1 + a3))
+    Ok((code, ptr, i32::max(a1 + a2, a1 + a3)))
 }
 
-fn compile_while(cond: Expr, stmt: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<Op>, Ptr, Allocs) {
+fn compile_while(cond: Expr, stmt: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult{
     let mut code = Vec::new();
 
-    let (expr, ptr, a1) = compile_expr(cond, env, ptr, scope);
-    let (body, _, a2) = compile_stmt(stmt, env, ptr, scope);
+    let (expr, ptr, a1) = compile_expr(cond, env, ptr, scope)?;
+    let (body, _, a2) = compile_stmt(stmt, env, ptr, scope)?;
 
     code.extend(expr);
     code.push(Op::Brf(1 + body.len() as i32));
     code.extend(body);
     code.push(Op::Bra(code.len() as i32 * -1 - 1));
 
-    (code, ptr, a1 + a2)
+    Ok((code, ptr, a1 + a2))
 }
 
-fn compile_func(name: String, args: Vec<String>, stmt: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<Op>, Ptr, Allocs) {
+fn compile_func(name: String, args: Vec<String>, stmt: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult{
     let mut code = Vec::new();
     let mut inner_env = env.clone();
     let mut inner_ptr = -3;
@@ -220,7 +227,7 @@ fn compile_func(name: String, args: Vec<String>, stmt: Stmt, env: &mut Env, ptr:
         inner_ptr -= 1;
     }
 
-    let (mut body, _, allocs) = compile_stmt(stmt, &mut inner_env, 0, Loc::Local);
+    let (mut body, _, allocs) = compile_stmt(stmt, &mut inner_env, 0, Loc::Local)?;
 
     if body.last() != Some(&Op::Ret) {
         body.push(Op::Ret);
@@ -232,45 +239,45 @@ fn compile_func(name: String, args: Vec<String>, stmt: Stmt, env: &mut Env, ptr:
     code.extend(body);
 
 
-    (code, ptr, allocs)
+    Ok((code, ptr, allocs))
 }
 
-fn compile_ret(expr: Option<Expr>, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<Op>, Ptr, Allocs) {
+fn compile_ret(expr: Option<Expr>, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult{
     if let Some(expr) = expr {
-        let (mut code, ptr, allocs) = compile_expr(expr, env, ptr, scope);
+        let (mut code, ptr, allocs) = compile_expr(expr, env, ptr, scope)?;
         
         code.push(Op::StoreRR);
         code.push(Op::Ret);
 
-        return (code, ptr, allocs);
+        return Ok((code, ptr, allocs));
     }
 
-    (vec![Op::Ret], ptr, 0)
+    Ok((vec![Op::Ret], ptr, 0))
 }
 
-fn compile_command(op: Op, expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<Op>, Ptr, Allocs) {
+fn compile_command(op: Op, expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult{
     let mut code = Vec::new();
 
-    let (expr, ptr, allocs) = compile_expr(expr, env, ptr, scope);
+    let (expr, ptr, allocs) = compile_expr(expr, env, ptr, scope)?;
 
     code.extend(expr);
     code.push(op);
 
-    (code, ptr, allocs)
+    Ok((code, ptr, allocs))
 }
 
-fn compile_expr_stmt(expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<Op>, Ptr, Allocs) {
+fn compile_expr_stmt(expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult{
     let mut code = Vec::new();
 
-    let (expr, ptr, allocs) = compile_expr(expr, env, ptr, scope);
+    let (expr, ptr, allocs) = compile_expr(expr, env, ptr, scope)?;
 
     code.extend(expr);
     code.push(Op::Ajs(-1)); // pop expr result from stack as it won't be used anyway
     
-    (code, ptr, allocs)
+    Ok((code, ptr, allocs))
 }
 
-fn compile_stmt(stmt: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<Op>, Ptr, Allocs) {
+fn compile_stmt(stmt: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult{
     match stmt {
         Stmt::Scope(seq) => compile_seq(seq, env, ptr, scope),
         Stmt::Return(expr) => compile_ret(expr, env, ptr, scope),
@@ -285,14 +292,14 @@ fn compile_stmt(stmt: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> (Vec<
     }
 }
 
-fn compile_entry(entry: Entry, env: &mut Env, ptr: Ptr) -> (Vec<Op>, Ptr, Allocs) {
+fn compile_entry(entry: Entry, env: &mut Env, ptr: Ptr) -> CompileResult{
     match  entry {
         Entry::Func(name, args, stmt) => compile_func(name, args, stmt, env, ptr, Loc::Local),
         Entry::Stmt(stmt) => compile_stmt(stmt, env, ptr, Loc::Global)
     }
 }
 
-pub fn compile(program: Program) -> Vec<Op> {
+pub fn compile(program: Program) -> Result<Vec<Op>, CompileError> {
     let mut code = Vec::new();
     let mut body = Vec::new();
     let mut env = Env::new();
@@ -300,7 +307,7 @@ pub fn compile(program: Program) -> Vec<Op> {
     let mut allocs = 0;
 
     for entry in program {
-        let (ops, p, a) = compile_entry(entry, &mut env, ptr);
+        let (ops, p, a) = compile_entry(entry, &mut env, ptr)?;
 
         body.extend(ops);
 
@@ -311,5 +318,5 @@ pub fn compile(program: Program) -> Vec<Op> {
     code.push(Op::Ajs(allocs));
     code.extend(body);
 
-    code
+    Ok(code)
 }
