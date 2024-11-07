@@ -33,14 +33,17 @@ impl TokenMap {
             let kind = match token.value {
                 Token::If => 1,
                 Token::Else => 1,
-                Token::Func => 1,
                 Token::While => 1,
-                Token::Break => 2,
-                Token::Return => 2,
-                Token::True => 3,
-                Token::False => 3,
-                Token::Number(_) => 4,
-                Token::Identifier(_) => 5,
+                Token::Func => 2,
+                Token::Break => 3,
+                Token::Return => 3,
+                Token::Forward => 4,
+                Token::Left => 4,
+                Token::Right => 4,
+                Token::True => 5,
+                Token::False => 5,
+                Token::Number(_) => 6,
+                Token::Identifier(_) => 7,
                 _ => 0
             };
 
@@ -141,7 +144,7 @@ pub fn highlight(input: &str) -> Highlight {
             if !current.value.is_empty() {
                 fragments.push(current);
             }
-                
+
             current = Fragment {
                 kind,
                 hint,

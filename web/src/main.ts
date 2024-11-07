@@ -1,96 +1,133 @@
 import './style.css'
-import { Editor, editor, getContent, setContent } from './editor/editor';
-import { load_module } from './wasm/wasm';
+import { Editor } from './editor/editor';
+import { loadModule } from './wasm/wasm';
+import { EventBus } from './editor/bus';
+import { Input } from './editor/input';
 
+const bus = new EventBus()
 
-const module = await load_module('wasm/wasm32-unknown-unknown/debug/trtl.wasm')
-const editorElement = document.querySelector<HTMLDivElement>("div#editor")!;
-const canvasElement = document.querySelector<HTMLCanvasElement>("canvas#canvas")!;
+const loadRenderer = (): Promise<Worker> => {
+    return new Promise(resolve => {
+        const renderer = new Worker(new URL('./renderer.ts', import.meta.url), {
+            type: 'module'
+        });
 
-canvasElement.width = canvasElement.parentElement?.clientWidth ?? 512;
-canvasElement.height = canvasElement.parentElement?.clientHeight ?? 512;
+        const listen = (e: MessageEvent) => {
+            if (e.data === 1) {
+                renderer.removeEventListener('message', listen)
+                resolve(renderer)
+            }
 
-const renderer = new Worker(new URL('./renderer.ts', import.meta.url), {
-    type: 'module'
-});
+            renderer.removeEventListener('message', listen)
+        }
 
-const runCpu = (editor: Editor) => {
-    const input = getContent(editor).join('\n')
-    renderer.postMessage({
-        input,
-        width: canvasElement.width,
-        height: canvasElement.height
+        renderer.addEventListener('message', listen)
     })
 }
 
-if (editorElement && module) {
-    const e = editor(editorElement, module, {
-        contentChanged: runCpu
-    });
+const init = async () => {
+    const renderer = await loadRenderer()
+    const module = await loadModule('wasm/wasm32-unknown-unknown/debug/trtl.wasm')
+    const editorElement = document.querySelector<HTMLDivElement>("div#editor")!;
+    const canvasElement = document.querySelector<HTMLCanvasElement>("canvas#canvas")!;
+    
+    fixCanvasDimensions(canvasElement)
+    
+    if (module) {
+        const editor = new Editor(editorElement, module, bus)
+    
+        const content = [
+            "func min(a, b) {",
+            "  if a < b {",
+            "    return a;",
+            "  }",
+            "",
+            "  return b;",
+            "}",
+            "",
+            "func segment(n, length) {",
+            "  if n == 0 {",
+            "    forward length;",
+            "    return;",
+            "  }",
+            "",
+            "  l = (length / 3);",
+            "",
+            "  segment(n - 1, l);",
+            "  left 60;",
+            "  segment(n - 1, l);",
+            "  right 120;",
+            "  segment(n - 1, l);",
+            "  left 60;",
+            "  segment(n - 1, l);",
+            "}",
+            "",
+            "func triangle(n, length) {",
+            "  left 60;",
+            "  segment(n, length);",
+            "  right 120;",
+            "  segment(n, length);",
+            "  right 120;",
+            "  segment(n, length);",
+            "  left 180;",
+            "}",
+            "",
+            "i = min(0, 5);",
+            "",
+            "while i < 5 {",
+            "  triangle(i, 400);",
+            "  i = i + 1;",
+            "}",
+            ""
+        ]
 
-    const content = [
-        "func min(a, b) {",
-        "    if a < b {",
-        "        return a;",
-        "    }",
-        "",
-        "    return b;",
-        "}",
-        "",
-        "func segment(n, length) {",
-        "    if n == 0 {",
-        "        forward length;",
-        "        return;",
-        "    }",
-        "",
-        "    l = (length / 3);",
-        "",
-        "    segment(n - 1, l);",
-        "    left 60;",
-        "    segment(n - 1, l);",
-        "    right 120;",
-        "    segment(n - 1, l);",
-        "    left 60;",
-        "    segment(n - 1, l);",
-        "}",
-        "",
-        "func triangle(n, length) {",
-        "    left 60;",
-        "    segment(n, length);",
-        "    right 120;",
-        "    segment(n, length);",
-        "    right 120;",
-        "    segment(n, length);",
-        "    left 180;",
-        "}",
-        "",
-        "i = min(0, 5);",
-        "",
-        "while i < 5 {",
-        "    triangle(i, 400);",
-        "    i = i + 1;",
-        "}",
-        ""
-    ]
+        bus.subscribe('contentChanged', () => {
+            renderer.postMessage({
+                input: editor.getContent().join('\n'),
+                width: canvasElement.width,
+                height: canvasElement.height
+            })
+        })
+                
+        window.addEventListener("resize", () => {
+            fixCanvasDimensions(canvasElement)
+            renderer.postMessage({
+                input: editor.getContent().join('\n'),
+                width: canvasElement.width,
+                height: canvasElement.height
+            })
+        })
 
-    setContent(e, ...content)
+        editor.setContent(...content)
+    }
+    
+    renderer.addEventListener('message', (e) => {
+        if (!canvasElement) {
+            return
+        }
+    
+        const image = e.data as ImageData
+        const context = canvasElement.getContext("2d")
+    
+        if (context) {
+            context.putImageData(image, 0, 0);
+        }
+    })
+
 }
 
 
-renderer.addEventListener('message', (e) => {
-    if (!canvasElement) {
-        return
-    }
 
-    const image = e.data as ImageData
-    const context = canvasElement.getContext("2d")
-
-    if (context) {
-        context.putImageData(image, 0, 0);
-    }
+window.addEventListener('DOMContentLoaded', async () => {
+    await init()
 })
 
-window.addEventListener("resize", (e) => {
-    canvasElement.width = canvasElement.parentElement?.clientWidth ?? 512;
-    canvasElement.height = canvasElement.parentElement?.clientHeight ?? 512;
-})
+
+const fixCanvasDimensions = (canvas: HTMLCanvasElement) => {
+    const parent = canvas.parentElement
+    
+    if (parent) {
+        canvas.width = parent.clientWidth ?? 512
+        canvas.height = parent.clientHeight ?? 512
+    }
+}

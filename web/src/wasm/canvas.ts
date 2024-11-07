@@ -1,4 +1,4 @@
-import { WasmModule, read_return_bytes_from_module } from "./wasm"
+import { WasmModule, readReturnBytesFromModule } from "./wasm"
 
 
 export class Canvas {
@@ -17,7 +17,7 @@ export class Canvas {
     get_bytes(): Uint8Array | null {
         if (this.ptr < 0) return null
         const ptr = this.module.exports.canvas_pixels(this.ptr)
-        const pixels = read_return_bytes_from_module(this.module, ptr, "pixels")
+        const pixels = readReturnBytesFromModule(this.module, ptr)
 
         return pixels
     }

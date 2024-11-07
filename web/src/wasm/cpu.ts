@@ -1,5 +1,5 @@
 import { Canvas } from './canvas'
-import { WasmModule, write_bytes_to_module } from './wasm'
+import { WasmModule, writeBytesToModule } from './wasm'
 
 const encoder = new TextEncoder()
 
@@ -9,7 +9,7 @@ export class Cpu {
 
     constructor(module: WasmModule, input: string) {
         const utf8 = encoder.encode(input)
-        const ptr_to_utf8 = write_bytes_to_module(module, utf8)
+        const ptr_to_utf8 = writeBytesToModule(module, utf8)
 
         this.ptr = module.exports.create_cpu(ptr_to_utf8, utf8.length) as number
         this.module = module

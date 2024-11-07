@@ -8,6 +8,11 @@ html, body {
   width: 100%;
   height: 100%;
   background-color: #e8e8e8;
+  font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+*:focus {
+  outline: none;
 }
 
 .h-stack {
@@ -28,6 +33,24 @@ html, body {
   min-width: 0;
 }
 
+.flex-2 {
+  flex: 2;
+  min-height: 0;
+  min-width: 0;
+}
+
+.flex-3 {
+  flex: 3;
+  min-height: 0;
+  min-width: 0;
+}
+
+.flex-4 {
+  flex: 4;
+  min-height: 0;
+  min-width: 0;
+}
+
 .gap-small {
   gap: 0.4em;
 }
@@ -39,7 +62,7 @@ html, body {
   width: 100%;
   counter-reset: line;
   overflow-x: auto;
-  text-wrap: nowrap;  
+  text-wrap: nowrap;
   white-space: pre;
 }
 
@@ -55,23 +78,32 @@ html, body {
 
 .keyword {
   color: blue;
-  font-weight: bold;
+}
+
+.func {
+  color: blue;
 }
 
 .identifier {
+
+}
+
+.instruction {
+  color: rgb(65, 0, 65);
   font-weight: bold;
 }
 
 .number {
-  color: darkgreen;
+  color: darkolivegreen;
 }
 
 .insert {
   border-bottom: 1px dotted blue;
 }
 
-.remove {
-  border-bottom: 1px dotted red;
+.lint {
+  border-bottom: 2px dotted red;
+  background-color: rgba(255, 0, 0, 0.05);
 }
 
 #canvas {

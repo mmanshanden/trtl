@@ -25,7 +25,7 @@ export interface WasmModule {
     memory: WebAssembly.Memory
 }
 
-const read_bytes_from_module = (module: WasmModule, ptr: number, len: number, cap: number): Uint8Array => {
+const readBytesFromModule = (module: WasmModule, ptr: number, len: number, cap: number): Uint8Array => {
     const mem = new Uint8Array(module.memory.buffer, ptr, len);
     const bytes = new Uint8Array(mem.length)
 
@@ -35,36 +35,35 @@ const read_bytes_from_module = (module: WasmModule, ptr: number, len: number, ca
     return bytes
 }
 
-export const read_return_bytes_from_module = (module: WasmModule, ptr: number, who?: string): Uint8Array => {
-    if (who) console.log(who)
+export const readReturnBytesFromModule = (module: WasmModule, ptr: number, who?: string): Uint8Array => {
     const mem = new Uint32Array(module.memory.buffer, ptr, 3)
     const buffer_ptr = mem[0]
     const buffer_len = mem[1]
     const buffer_cap = mem[2]
     module.exports.mfree(ptr, 12)
 
-    return read_bytes_from_module(module, buffer_ptr, buffer_len, buffer_cap)
+    return readBytesFromModule(module, buffer_ptr, buffer_len, buffer_cap)
 }
 
-export const write_bytes_to_module = (module: WasmModule, bytes: Uint8Array): number => {
+export const writeBytesToModule = (module: WasmModule, bytes: Uint8Array): number => {
     const ptr = module.exports.malloc(bytes.length) as number
     new Uint8Array(module.memory.buffer).set(bytes, ptr)
     return ptr
 }
 
-export const load_module = async (path: string): Promise<WasmModule> => {
+export const loadModule = async (path: string): Promise<WasmModule> => {
     let module: WasmModule | null = null
 
     const env = {
         alert: (ptr: WasmPtr, len: number, cap: number) => {
             if (!module) return
-            const bytes = read_bytes_from_module(module, ptr, len, cap)
+            const bytes = readBytesFromModule(module, ptr, len, cap)
             const decoded = new TextDecoder('utf-8').decode(bytes)
             console.error(decoded)
         },
         print: (ptr: WasmPtr, len: number, cap: number) => {
             if (!module) return
-            const bytes = read_bytes_from_module(module, ptr, len, cap)
+            const bytes = readBytesFromModule(module, ptr, len, cap)
             const decoded = new TextDecoder('utf-8').decode(bytes)
             console.log(decoded)
         }

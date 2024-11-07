@@ -1,8 +1,8 @@
 import { Canvas } from "./wasm/canvas"
 import { Cpu } from "./wasm/cpu"
-import { load_module } from "./wasm/wasm"
+import { loadModule } from "./wasm/wasm"
 
-const module = await load_module('../wasm/wasm32-unknown-unknown/debug/trtl.wasm')
+const module = await loadModule('../wasm/wasm32-unknown-unknown/debug/trtl.wasm')
 
 let cpu: Cpu | null = null
 let canvas: Canvas | null = null
@@ -41,6 +41,8 @@ onmessage = async (e) => {
         cancelAnimationFrame(renderRequestId)
     }
 
+    console.log(e.data)
+
     const { input, width, height } = e.data as RenderCall
 
     cpu?.destroy()
@@ -56,3 +58,5 @@ onmessage = async (e) => {
 
     render()
 }
+
+postMessage(1)

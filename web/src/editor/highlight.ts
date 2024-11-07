@@ -1,8 +1,8 @@
 import { decode, DecodeResult } from "../wasm/benocde"
-import { WasmModule, read_return_bytes_from_module, write_bytes_to_module } from "../wasm/wasm"
+import { WasmModule, readReturnBytesFromModule, writeBytesToModule } from "../wasm/wasm"
 
-type Style = 'keyword' | 'flow' |  'identifier' | 'number' | 'constant'
-type Error = 'insert' | 'remove'
+type Style = 'keyword' | 'flow' |  'identifier' | 'number' | 'constant' | 'func' | 'instruction'
+type Error = 'insert' | 'remove' | 'lint'
 
 interface Fragment {
     value: string
@@ -19,12 +19,16 @@ const translate_kind = (kind: number): Style | undefined => {
     if (kind === 1) {
         return 'keyword'
     } else if (kind === 2) {
-        return 'flow'
+        return 'func'
     } else if (kind === 3) {
-        return 'constant'
+        return 'flow'
     } else if (kind === 4) {
-        return 'number'
+        return 'instruction'  
     } else if (kind === 5) {
+        return 'constant'
+    } else if (kind === 6) {
+        return 'number'
+    } else if (kind === 7) {
         return 'identifier'
     } else {
         return undefined
@@ -33,9 +37,9 @@ const translate_kind = (kind: number): Style | undefined => {
 
 const translate_hint = (lint: number): Error | undefined => {
     if (lint > 1) {
-        return 'insert'
+        return 'lint'
     } else if (lint === 1) {
-        return 'remove'
+        return 'lint'
     } else {
         return undefined
     }
@@ -45,9 +49,9 @@ export const highlight = (module: WasmModule, input: string): Line[] => {
     const decoder = new TextDecoder('utf-8')
 
     const utf8 = new TextEncoder().encode(input)
-    const ptr_to_utf8 = write_bytes_to_module(module, utf8)
+    const ptr_to_utf8 = writeBytesToModule(module, utf8)
     const ptr_to_output = module.exports.syntax_fragments(ptr_to_utf8, utf8.length);
-    const output = read_return_bytes_from_module(module, ptr_to_output, "highlight");
+    const output = readReturnBytesFromModule(module, ptr_to_output);
 
     const [lines, hints] = decode(output).value
 
