@@ -29,7 +29,6 @@ export class Canvas {
     destroy() {
         if (this.ptr < 0) return null
 
-        console.log("destroying canvas")
         this.module.exports.destroy_canvas(this.ptr)
         this.ptr = -1
     }

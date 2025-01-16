@@ -14,17 +14,17 @@ export class Input {
         this.state = new Map()
         this.bus = bus
 
-        element.addEventListener('keydown', (e) => this.#keydown(e))
-        element.addEventListener('keyup', (e) => this.#keyup(e))
+        element.addEventListener('keydown', (e) => this.keydown(e))
+        element.addEventListener('keyup', (e) => this.keyup(e))
     }
 
-    #keydown(e: KeyboardEvent) {
+    private keydown(e: KeyboardEvent) {
         this.state.set(e.key, {
             controlHeld: e.ctrlKey
         })
     }
 
-    #keyup(e: KeyboardEvent) {
+    private keyup(e: KeyboardEvent) {
         let keyState = this.state.get(e.key)
 
         if (keyState) {

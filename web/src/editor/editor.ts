@@ -1,10 +1,8 @@
 import { WasmModule } from '../wasm/wasm'
 import { EventBus } from './bus'
 import { highlight } from './highlight'
-import { Input } from './input'
 
 export interface Position {
-    absoluteIndex: number,
     lineIndex: number,
     charIndex: number
 }
@@ -12,6 +10,15 @@ export interface Position {
 export interface Caret {
     from: Position
     to?: Position
+}
+
+const toStartOfLine = (caret: Caret): Caret => {
+    return {
+        from: {
+            lineIndex: caret.from.lineIndex,
+            charIndex: 0
+        }
+    }
 }
 
 const elementLength = (node: ChildNode): number => {
@@ -44,18 +51,15 @@ const positionInElement = (selection: Selection, document: HTMLDivElement, side:
             const length = positionInNode(range, line, side)
 
             return {
-                absoluteIndex: absoluteIndex + length,
                 charIndex: length,
                 lineIndex: lineIndex
             }
         }
 
-        absoluteIndex += elementLength(line)
         lineIndex += 1
     }
 
     return {
-        absoluteIndex: 0,
         lineIndex: 0,
         charIndex: 0
     }
@@ -67,25 +71,41 @@ export class Editor {
     bus: EventBus
 
     constructor(parent: HTMLDivElement, module: WasmModule, bus: EventBus) {
-        this.element = this.#createElement(parent) 
+        this.element = this.createElement(parent) 
         this.module = module
         this.bus = bus
 
-        this.#setup()
-    }
-
-    #setup() {
         this.element.addEventListener('input', () => {
-            this.#highlight()
+            this.highlight()
+        })
+
+        this.element.addEventListener('copy', (e) => {
+            const caret = this.getCaret()
+            if (!caret) return
+            if (caret.to) return
+            
+            e.preventDefault()
+            this.writeCurrentLineToClipboard(caret)
+        })
+
+        this.element.addEventListener('cut', (e) => {
+            const caret = this.getCaret()
+            if (!caret) return
+            if (caret.to) return
+            
+            e.preventDefault()
+            this.writeCurrentLineToClipboard(caret)
+            this.removeLineByIndex(caret.from.lineIndex)
+            this.setCaret(toStartOfLine(caret))
         })
     }
 
-    #createElement(parent: HTMLDivElement): HTMLDivElement {
+    private createElement(parent: HTMLDivElement): HTMLDivElement {
         parent.innerHTML = `<div class="code-editor" contenteditable="true" spellcheck="false" />`
         return parent.querySelector<HTMLDivElement>('div.code-editor')!
     }
 
-    #highlight() {
+    private highlight() {
         const caret = this.getCaret()
         const content = this.getContent()
 
@@ -152,11 +172,23 @@ export class Editor {
             charIndex = charIndex - length
         }
 
-        range.setStart(node, charIndex)
-        range.setEnd(node, charIndex)
+        range.setStart(node, Math.min(elementLength(node), charIndex))
+        range.setEnd(node, Math.min(elementLength(node), charIndex))
 
         selection?.removeAllRanges()
         selection?.addRange(range)
+    }
+
+    writeCurrentLineToClipboard(caret: Caret) {
+        const content = this.getContent()
+        const line = content[caret.from.lineIndex]
+        navigator.clipboard.writeText(line)
+    }
+
+    removeLineByIndex(index: number) {
+        const content = this.getContent()
+        content.splice(index, 1)
+        this.setContent(...content)
     }
 
     selectCurrentLine() {
@@ -172,7 +204,7 @@ export class Editor {
         const line = this.element.childNodes[lineIndex]
 
         range.setStart(line, 0)
-        range.setEnd(line, 1)
+        range.setEnd(line, line.childNodes.length)
 
         selection.removeAllRanges()
         selection.addRange(range)

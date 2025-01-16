@@ -65,7 +65,6 @@ export const loadModule = async (path: string): Promise<WasmModule> => {
             if (!module) return
             const bytes = readBytesFromModule(module, ptr, len, cap)
             const decoded = new TextDecoder('utf-8').decode(bytes)
-            console.log(decoded)
         }
     }
 

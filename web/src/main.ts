@@ -116,8 +116,6 @@ const init = async () => {
 
 }
 
-
-
 window.addEventListener('DOMContentLoaded', async () => {
     await init()
 })

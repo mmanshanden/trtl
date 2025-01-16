@@ -41,8 +41,6 @@ onmessage = async (e) => {
         cancelAnimationFrame(renderRequestId)
     }
 
-    console.log(e.data)
-
     const { input, width, height } = e.data as RenderCall
 
     cpu?.destroy()
