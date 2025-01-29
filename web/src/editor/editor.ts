@@ -43,7 +43,6 @@ const positionInElement = (selection: Selection, document: HTMLDivElement, side:
     const range = selection.getRangeAt(0)
     const node = side === 'start' ? range.startContainer : range.endContainer
 
-    let absoluteIndex = 0
     let lineIndex = 0
 
     for (const line of document.childNodes) {
@@ -65,56 +64,94 @@ const positionInElement = (selection: Selection, document: HTMLDivElement, side:
     }
 }
 
+type Content = string[]
+
+interface UndoStack {
+    stack: string[]
+    pointer: number
+}
+
 export class Editor {
-    element: HTMLDivElement
+    mirror: HTMLDivElement
+    input: HTMLDivElement
     module: WasmModule
     bus: EventBus
+    undoStack: UndoStack = {
+        stack: [],
+        pointer: 0
+    }
 
     constructor(parent: HTMLDivElement, module: WasmModule, bus: EventBus) {
-        this.element = this.createElement(parent) 
+        const [mirror, input] = this.createElement(parent) 
+        this.mirror = mirror
+        this.input = input
         this.module = module
         this.bus = bus
 
-        this.element.addEventListener('input', () => {
+        this.input.addEventListener('input', (e) => {
             this.highlight()
         })
 
-        this.element.addEventListener('copy', (e) => {
+        this.input.addEventListener('copy', (e) => {
             const caret = this.getCaret()
             if (!caret) return
             if (caret.to) return
-            
-            e.preventDefault()
-            this.writeCurrentLineToClipboard(caret)
+
+            this.selectCurrentLine()
         })
 
-        this.element.addEventListener('cut', (e) => {
+        this.input.addEventListener('cut', (e) => {
             const caret = this.getCaret()
             if (!caret) return
             if (caret.to) return
             
-            e.preventDefault()
-            this.writeCurrentLineToClipboard(caret)
-            this.removeLineByIndex(caret.from.lineIndex)
-            this.setCaret(toStartOfLine(caret))
+            this.selectCurrentLine()
         })
     }
 
-    private createElement(parent: HTMLDivElement): HTMLDivElement {
-        parent.innerHTML = `<div class="code-editor" contenteditable="true" spellcheck="false" />`
-        return parent.querySelector<HTMLDivElement>('div.code-editor')!
+    private createElement(parent: HTMLDivElement): [HTMLDivElement, HTMLDivElement] {
+        parent.innerHTML = `
+            <div class="code-editor">
+                <div class="input" contenteditable="true" spellcheck="false"></div>
+                <div class="mirror"><div class="ln"></div></div>
+            </div>`
+        const mirror = parent.querySelector<HTMLDivElement>('div.mirror')!
+        const input = parent.querySelector<HTMLDivElement>('div.input')!
+        return [mirror, input]
     }
 
     private highlight() {
-        const caret = this.getCaret()
-        const content = this.getContent()
-
-        this.setContent(...content)
-        if (caret) this.setCaret(caret)
+        const input = this.getContent().join('\n')
+        const lines = highlight(this.module, input)
+        let html = ""
+    
+        lines.forEach(({ fragments }, lineIndex) => {
+            html += `<div class="ln">`
+    
+            fragments.forEach(({ value, kind, error, hint }) => {
+                if (value == "") {
+                    html += '<br>'
+                } else if (kind || error || hint) {
+                    let classes = [kind, error].filter(Boolean).join(" ")
+                    let title = Boolean(hint) ? hint : ""
+                    html += `<span class="${classes}" title="${title}">${value}</span>`
+                } else {
+                    html += value
+                }
+            })
+    
+            if (lineIndex === lines.length - 1) {
+                html += '<br>'
+            }
+    
+            html += `</div>`
+        })
+    
+        this.mirror.innerHTML = html
     }
 
     focus() {
-        this.element.focus()
+        this.input.focus()
     }
 
     getCaret(): Caret | null {
@@ -128,13 +165,13 @@ export class Editor {
     
         if (range.startOffset === range.endOffset && range.startContainer === range.endContainer) {
             return {
-                from: positionInElement(selection, this.element, 'start')
+                from: positionInElement(selection, this.input, 'start')
             }
         }
     
         return {
-            from: positionInElement(selection, this.element, 'start'),
-            to: positionInElement(selection, this.element, 'end')
+            from: positionInElement(selection, this.input, 'start'),
+            to: positionInElement(selection, this.input, 'end')
         }
     }
 
@@ -148,7 +185,7 @@ export class Editor {
         const range = document.createRange();
 
         let { lineIndex, charIndex } = caret.from 
-        let node = this.element.childNodes[lineIndex]
+        let node = this.input.childNodes[lineIndex]
         let stack = [...node.childNodes]
 
         while (stack.length > 0) {
@@ -201,7 +238,7 @@ export class Editor {
         const range = document.createRange()
         const { lineIndex } = this.getCaret()!.from
 
-        const line = this.element.childNodes[lineIndex]
+        const line = this.input.childNodes[lineIndex]
 
         range.setStart(line, 0)
         range.setEnd(line, line.childNodes.length)
@@ -210,44 +247,21 @@ export class Editor {
         selection.addRange(range)
     }
 
-    getContent(): string[] {
-        const lines = Array.from(this.element.childNodes)
-        return lines.map(node => node.textContent ?? "")
+    setContent(...content: Content) {
+        // this.input.innerHTML = ""
+        // content.forEach(line => {
+        //     const div = document.createElement('div')
+        //     div.textContent = line
+        //     div.classList.add('ln')
+        //     this.input.appendChild(div)
+        // })
+
+        // this.highlight()
     }
 
-    setContent(...content: string[]) {
-        const input = content.join('\n')
-        const lines = highlight(this.module, input)
-        let html = ""
-    
-        lines.forEach(({ fragments }, lineIndex) => {
-            html += `<div class="ln">`
-    
-            fragments.forEach(({ value, kind, error, hint }) => {
-                if (value == "") {
-                    html += '<br>'
-                } else if (kind || error || hint) {
-                    let classes = [kind, error].filter(Boolean).join(" ")
-                    let title = Boolean(hint) ? hint : ""
-                    html += `<span class="${classes}" title="${title}">${value}</span>`
-                } else {
-                    html += value
-                }
-            })
-    
-            if (lineIndex === lines.length - 1) {
-                html += '<br>'
-            }
-    
-            html += `</div>`
-        })
-    
-        this.element.innerHTML = html
-
-        this.bus.publish('contentChanged', {
-            editor: this,
-            content
-        })
+    getContent(): Content {
+        const lines = Array.from(this.input.childNodes)
+        return lines.map(line => line.textContent ?? "")
     }
 }
 

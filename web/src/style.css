@@ -56,6 +56,7 @@ html, body {
 }
 
 .code-editor {
+  position: relative;
   font-family: monospace;
   font-size: 14px;
   height: 100%;
@@ -66,7 +67,26 @@ html, body {
   white-space: pre;
 }
 
-.code-editor div.ln::before {
+.code-editor div.input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  opacity: 0;
+}
+
+.code-editor div.mirror {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.code-editor div.mirror div.ln::before {
   counter-increment: line;
   content: counter(line);
   opacity: 0.5;
