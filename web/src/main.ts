@@ -29,7 +29,7 @@ const init = async () => {
     const renderer = await loadRenderer()
     const module = await loadModule('wasm/wasm32-unknown-unknown/debug/trtl.wasm')
     const editorElement = document.querySelector<HTMLDivElement>("div#editor")!;
-    const canvasElement = document.querySelector<HTMLCanvasElement>("canvas#canvas")!;
+    const canvasElement = document.querySelector<HTMLCanvasElement>("div#canvas canvas")!;
     
     fixCanvasDimensions(canvasElement)
     
@@ -72,9 +72,9 @@ const init = async () => {
             "  left 180;",
             "}",
             "",
-            "i = min(0, 5);",
+            "i = min(3, 5);",
             "",
-            "while i < 5 {",
+            "while i < 6 {",
             "  triangle(i, 400);",
             "  i = i + 1;",
             "}",

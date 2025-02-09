@@ -5,13 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   </head>
   <body>
-    <div class="h-stack gap-small">
-      <div id="left" class="v-stack gap-small flex-3">
-        <h3>trtl</h3>
-        <div id="editor" class="flex-1 flex-elem"></div>
+    <div class="h-stack full-height">
+      <div class="flex-3 v-stack gap-small">
+        <span class="trtl-logo">trtl</span>
+        <div class="h-stack">
+          <select id="select">
+            <option value="koch">Koch Snowflake</option>
+          </select>
+        </div>
+        <div id="editor" class="flex-1"></div>
       </div>
-      <div id="right" class="flex-4 flex-elem">
-        <canvas id="canvas"></canvas>
+      <div id="canvas" class="flex-4">
+        <canvas></canvas>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

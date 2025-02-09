@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Nova+Mono&display=swap');
+
 * {
   box-sizing: border-box;
 }
@@ -9,22 +11,32 @@ html, body {
   height: 100%;
   background-color: #e8e8e8;
   font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overscroll-behavior: none;
 }
 
 *:focus {
   outline: none;
 }
 
+.full-height {
+  height: 100%;
+}
+
 .h-stack {
   display: flex;
   flex-direction: row;
-  height: 100%;
 }
 
 .v-stack {
   display: flex;
   flex-direction: column;
-  width: 100%;
+}
+
+.trtl-logo {
+  font-family: 'Nova Mono';
+  font-size: 2.4rem;
+  font-weight: bold;
+  padding: 0 0.1rem;
 }
 
 .flex-1 {
@@ -52,48 +64,64 @@ html, body {
 }
 
 .gap-small {
-  gap: 0.4em;
+  gap: 0.4rem;
 }
 
-.code-editor {
-  position: relative;
-  font-family: monospace;
-  font-size: 14px;
+div.code-editor {
   height: 100%;
   width: 100%;
-  counter-reset: line;
-  overflow-x: auto;
-  text-wrap: nowrap;
-  white-space: pre;
-}
 
-.code-editor div.input {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 2;
-  opacity: 0;
-}
+  * {
+    overscroll-behavior: none;
+  }
 
-.code-editor div.mirror {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 1;
-}
+  textarea.input, div.mirror, div.gutter {
+    font-family: monospace;
+    font-size: 1.0rem;
+    line-height: 1.15rem;
+    text-wrap: nowrap;
+    white-space: pre;
+  }
 
-.code-editor div.mirror div.ln::before {
-  counter-increment: line;
-  content: counter(line);
-  opacity: 0.5;
-  display: inline-block;
-  text-align: right;
-  padding-right: 0.6em;
-  width: 2.4em;
+  div.gutter {
+    padding: 0 1rem;
+    min-width: 3.0rem;
+    color: #444;
+    text-align: right; 
+    overflow: hidden;
+    font-size: 0.9rem;
+    line-height: 1.15rem;
+  }
+
+  div.content {
+    position: relative;
+
+    textarea.input, div.mirror {
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      right: 0;
+      padding: 0;
+      margin: 0;
+      border: none;
+    }
+
+    div.mirror {
+      z-index: 1;
+      overflow: hidden;
+    }
+
+    textarea.input {
+      z-index: 2;
+      resize: none;
+
+      color: transparent;
+      caret-color: black;
+      background-color: transparent;
+    }
+  }
 }
 
 .keyword {
@@ -126,7 +154,12 @@ html, body {
   background-color: rgba(255, 0, 0, 0.05);
 }
 
-#canvas {
+div#canvas {
+  overflow: hidden;
+}
+
+div#canvas canvas {
   width: 100%;
   height: 100%;
+  box-sizing: border-box;
 }
