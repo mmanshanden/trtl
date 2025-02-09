@@ -51,7 +51,7 @@ export const writeBytesToModule = (module: WasmModule, bytes: Uint8Array): numbe
     return ptr
 }
 
-export const loadModule = async (path: string): Promise<WasmModule> => {
+export const loadModule = async (path: string) => {
     let module: WasmModule | null = null
 
     const env = {
