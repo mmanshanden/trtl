@@ -11,7 +11,6 @@ fn bencode_str(out: &mut Vec<u8>, bytes: &[u8]) {
     out.extend_from_slice(bytes);
 }
 
-
 fn bencode_fragment(out: &mut Vec<u8>, fragment: Fragment) {
     let mut buffer = fragment.value.as_bytes();
     let mut len = (buffer.len() + 2).to_string().bytes().collect();

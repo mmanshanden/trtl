@@ -47,6 +47,10 @@ pub enum Token<'a> {
     Left,
     Right,
     Func,
+
+    Whitespace(&'a str),
+    Comment(&'a str),
+    LineBreak
 }
 
 impl<'a> Token<'a> {
@@ -176,7 +180,9 @@ impl<'a> Lexer<'a> {
         self.current_char = self.chars.next();
     }
 
-    fn read_whitespace(&mut self) {
+    fn read_whitespace(&mut self) -> &'a str {
+        let start = self.current_loc.byte;
+
         while let Some(c) = self.current_char {
             if !c.is_whitespace() {
                 break;
@@ -184,6 +190,8 @@ impl<'a> Lexer<'a> {
 
             self.advance();
         }
+
+        &self.input[start..self.current_loc.byte]
     }
 
     /// Returns true when given `char` cannot be part of an identifier
@@ -232,8 +240,6 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn next_token(&mut self) -> Span<Token<'a>> {
-        self.read_whitespace();
-
         let start = self.current_loc;
 
         if self.current_char.is_none() {
@@ -338,6 +344,14 @@ impl<'a> Lexer<'a> {
             '0'..='9' => {
                 let num = self.read_number();
                 Token::Number(num)
+            }
+            '\n' => {
+                self.advance();
+                Token::LineBreak
+            }
+            c if c.is_whitespace() => {
+                self.read_whitespace();
+                Token::Whitespace(self.input[start.byte..self.current_loc.byte].trim())
             }
             _ => {
                 self.advance();

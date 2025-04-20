@@ -1,8 +1,8 @@
 use core::str;
 use std::{fs::File, io::Read};
 
-use lang::{compile::compile, lex::Lexer, parse::parse_program, run::{ParseResult, Run}};
-use machine::{canvas::Canvas, cpu::Cpu};
+use lang::ast::{parse_expr, parse_expr_primary, parse_program, Deny, Lexer, Parser, Run};
+
 
 // use minifb::{Window, WindowOptions};
 
@@ -12,6 +12,7 @@ pub mod machine;
 fn stdout(s: &str) {
     println!("{}", s);
 }
+
 
 fn main() {
     let source = "src/main.trs";
@@ -35,19 +36,29 @@ fn main() {
     let mut lexer = Lexer::new(&code);
     let tokens = lexer.tokens();
 
+
     let run = Run::new(&tokens);
+    let deny = Deny::new();
 
-    let parse_result = parse_program(run);
+    let p = parse_program();
 
-    let (program, dist, ops) = match parse_result {
-        ParseResult::Err(_) => { 
-            println!("error");
-            return
-        },
-        ParseResult::Ok(program, run) => (program, run.dist, run.corrections),
-    };
+    let r = p.parse(run, deny);
 
-    let ops = compile(program);
+    println!("Parse result: {:?}", r);
+
+    // let parse_result = parse_program(run);
+
+    // let (program, dist, ops) = match parse_result {
+    //     ParseResult::Err(_) => { 
+    //         println!("error");
+    //         return
+    //     },
+    //     ParseResult::Ok(program, run) => (program, run.dist, run.corrections),
+    // };
+
+    // let ops = compile(program);
+    
+    // =======================
 
     // let window_options = WindowOptions::default();
 

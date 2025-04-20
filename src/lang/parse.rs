@@ -130,6 +130,12 @@ fn parse_expr_args<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Ve
     Ok(args, run)
 }
 
+/// Parses an expression wrapped by `(` and `)` tokens.
+/// 
+/// Returns a parse result containing the parsed expression or an error
+/// when parsing was not possible.
+/// 
+/// This function is used to parse sub expressions. 
 fn parse_expr_parens<'a>(run: Run<'a>, deny: &mut Stack<'a>) -> ParseResult<'a, Expr> {
     let n = match run.first_where(|t| t == Token::LeftParen, deny) {
         None => return Err(run),
