@@ -1,10 +1,9 @@
 pub mod bencode;
 pub mod highlight;
 
-use std::{alloc::Layout};
 
-use bencode::benchode_highlight;
-use highlight::highlight;
+pub use bencode::benchode_highlight;
+pub use highlight::highlight;
 
 use crate::{lang::{ast::Program, compile::compile, lex::Lexer, parse::parse_program, run::Run}, machine::{canvas::{self, Canvas}, cpu::Cpu}};
 
@@ -45,16 +44,24 @@ extern "C" {
 fn console_log(msg: String) {
     let ptr = msg.as_ptr();
     let len = msg.len();
+    let cap = msg.capacity();
+
+    std::mem::forget(msg);
+
     unsafe {
-        print(ptr as usize, len, len);
+        print(ptr as usize, len, cap);
     }
 }
 
-fn console_error(msg: &str) {
+fn console_error(msg: String) {
     let ptr = msg.as_ptr();
     let len = msg.len();
+    let cap = msg.capacity();
+
+    std::mem::forget(msg);
+
     unsafe {
-        alert(ptr as usize, len, len);
+        alert(ptr as usize, len, cap);
     }
 }
 
@@ -78,15 +85,14 @@ pub unsafe fn mfree(ptr: *mut u8, len: usize) {
 pub unsafe fn syntax_fragments(ptr: *mut u8, len: usize) -> *const u8 {
     std::panic::set_hook(Box::new(|panic_info| {
         let out = panic_info.to_string();
-        console_error(&out)
+        console_error(out)
     }));
 
     let input = read_string_from_mem(ptr, len);
-    let mut bytes = Vec::new();
     let fragments = highlight(&input);
-
+    let mut bytes = Vec::new();
+    
     benchode_highlight(&mut bytes, fragments);
-
     return_bytes(bytes)
 }
 
@@ -94,7 +100,7 @@ pub unsafe fn syntax_fragments(ptr: *mut u8, len: usize) -> *const u8 {
 pub unsafe fn create_canvas(width: u32, height: u32) -> *mut Canvas {
     std::panic::set_hook(Box::new(|panic_info| {
         let out = panic_info.to_string();
-        console_error(&out)
+        console_error(out)
     }));
 
     let canvas = Canvas::new(width, height);
@@ -130,7 +136,7 @@ pub unsafe fn canvas_clear(canvas: *mut Canvas) {
 fn create_cpu(ptr: *mut u8, len: usize) -> *mut Cpu {
     std::panic::set_hook(Box::new(|panic_info| {
         let out = panic_info.to_string();
-        console_error(&out)
+        console_error(out)
     }));
 
     let input = unsafe { 
@@ -146,7 +152,8 @@ fn create_cpu(ptr: *mut u8, len: usize) -> *mut Cpu {
 
     let code = compile(ast).unwrap_or_default();
 
-    let cpu = Cpu::new(|str| console_log(str.to_string()), code);
+    let cpu = Cpu::new(|str| println!("{}", str), code);
+    // let cpu = Cpu::new(|str| console_log(str.to_string()), code);
     let cpu = Box::new(cpu);
 
     Box::into_raw(cpu)
@@ -161,7 +168,7 @@ pub unsafe fn destroy_cpu(cpu: *mut Cpu) {
 pub unsafe fn cpu_run(cpu: *mut Cpu, canvas: *mut Canvas, n: u32) {
     std::panic::set_hook(Box::new(|panic_info| {
         let out = panic_info.to_string();
-        console_error(&out)
+        console_error(out)
     }));
 
     let mut cpu = Box::from_raw(cpu);

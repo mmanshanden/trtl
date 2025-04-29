@@ -6,35 +6,37 @@ func min(a, b) {
     return b;
 }
 
-func straight(n, length) {
+func segment(n, length) {
     if n == 0 {
-        forward length;
-        return;
+    forward length;
+    return;
     }
 
     l = (length / 3);
 
-    straight(n - 1, l);
+    segment(n - 1, l);
     left 60;
-    straight(n - 1, l);
+    segment(n - 1, l);
     right 120;
-    straight(n - 1, l);
+    segment(n - 1, l);
     left 60;
-    straight(n - 1, l);
+    segment(n - 1, l);
 }
 
 func triangle(n, length) {
     left 60;
-    straight(n, length);
+    segment(n, length);
     right 120;
-    straight(n, length);
+    segment(n, length);
     right 120;
-    straight(n, length);
+    segment(n, length);
     left 180;
 }
 
-i = 5;
+i = min(3, 5);
 
-while 1 > 0 {
-    triangle(i, 300);
+while i < 6 {
+    triangle(i, 400);
+    i = i + 1;
 }
+sdfsdf

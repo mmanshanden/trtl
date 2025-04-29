@@ -2,10 +2,10 @@ use core::fmt;
 use std::{fmt::Debug, rc::Rc, vec};
 
 /// The `Token` type
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Token<'a> {
     // util
-    Undefined,
+    Undefined(&'a str),
     Eof,
 
     // variable
@@ -54,48 +54,6 @@ pub enum Token<'a> {
     LineBreak
 }
 
-impl<'a> fmt::Debug for Token<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Identifier(id) => write!(f, "{}", id),
-            Self::Number(num) => write!(f, "{}", num),
-            Self::Whitespace(ws) => write!(f, " "),
-            Self::Comment(comment) => fmt::Result::Ok(()),
-            Self::LineBreak => write!(f, " "),
-            Self::Undefined => write!(f, ""),
-            Self::True => write!(f, "true"),
-            Self::False => write!(f, "false"),
-            Self::Plus => write!(f, "+"),
-            Self::Minus => write!(f, "-"),
-            Self::Multiply => write!(f, "*"),
-            Self::Divide => write!(f, "/"),
-            Self::Assign => write!(f, "="),
-            Self::Bang => write!(f, "!"),
-            Self::Equals => write!(f, "=="),
-            Self::NotEqual => write!(f, "!="),
-            Self::GreaterThan => write!(f, ">"),
-            Self::GreaterEqualThan => write!(f, ">="),
-            Self::LessThan => write!(f, "<"),
-            Self::LessEqualThan => write!(f, "<="),
-            Self::LeftParen => write!(f, "("),
-            Self::RightParen => write!(f, ")"),
-            Self::Comma => write!(f, ","),
-            Self::SemiColon => write!(f, ";"),
-            Self::LeftBrace => write!(f, "{{"),
-            Self::RightBrace => write!(f, "}}"),
-            Self::If => write!(f, "if"),
-            Self::Else => write!(f, "else"),
-            Self::While => write!(f, "while"),
-            Self::Return => write!(f, "return"),
-            Self::Break => write!(f, "break"),
-            Self::Forward => write!(f, "forward"),
-            Self::Left => write!(f, "left"),
-            Self::Right => write!(f, "right"),
-            Self::Func => write!(f, "func"),
-            Self::Eof => write!(f, "EOF"),
-        }
-    }
-}
 
 impl<'a> Token<'a> {
     pub fn identifier(&self) -> Option<&'a str> {
@@ -232,6 +190,16 @@ impl<'a> Lexer<'a> {
             self.current_char.unwrap_or(&0),
             b',' | b'.' | b';' | b'(' | b')' | b'-' | b'+' | b'/' | b'*' | b'^' | b'='
         )
+    }
+
+    fn read_any(&mut self) -> &'a str {
+        let start = self.pos.byte;
+
+        if self.current_char.is_some() {
+            self.advance();
+        }
+
+        &self.input[start..self.pos.byte]
     }
 
     fn read_identifier(&mut self) -> &'a str {
@@ -386,8 +354,8 @@ impl<'a> Lexer<'a> {
                 Token::Whitespace(whitespace)
             }
             _ => {
-                self.advance();
-                Token::Undefined
+                let any = self.read_any();
+                Token::Undefined(any)
             }
         };
 
@@ -502,14 +470,17 @@ pub enum Tag<'a> {
     Number(&'a str),
     Identifier(&'a str),
     Call(&'a str),
-    Whitespace(Tokens<'a>),
     Keyword(Token<'a>),
     Plain(Token<'a>),
     Move(Token<'a>),
+    Comment(&'a str),
+    Whitespace(&'a str),
+    LineBreak,
+    // todo: comment type
 
     UnexpectedToken {
         expected: Token<'a>,
-        actual: Tokens<'a>
+        actual: Tokens<'a>,
     }
 }
 
@@ -783,29 +754,64 @@ where
     }
 }
 
+fn output_whitespace_or_unexpected_token<'a, F>(tokens: Tokens<'a>, token: Token<'a>, detoken: F) -> Vec<Tag<'a>>
+where
+    F: Fn(Token<'a>) -> Tag<'a>
+{
+    if tokens.is_empty() {
+        return vec![detoken(token)];
+    }
+
+    let mut output = Vec::new();
+
+    for (i, t) in tokens.iter().enumerate() {
+        let tag = match t {
+            Token::Whitespace(str) => Some(Tag::Whitespace(str)),
+            Token::Comment(str) => Some(Tag::Comment(str)),
+            Token::LineBreak => Some(Tag::LineBreak),
+            _ => None
+        };
+
+        if tag.is_none() {
+            continue;
+        }
+
+        if i > 0 {
+            output.push(Tag::UnexpectedToken {
+                expected: token,
+                actual: &tokens[..i],
+            });
+        }
+
+        output.push(tag.unwrap());
+
+        return [
+            output, 
+            output_whitespace_or_unexpected_token(&tokens[i + 1..], token, detoken)
+        ].concat();
+    }
+
+    output.push(Tag::UnexpectedToken {
+        expected: token,
+        actual: tokens,
+    });
+
+    output.push(detoken(token));
+
+    output
+}
+
 fn expect_pred<'a, U>(pred: impl Fn(&'a Token<'a>) -> bool, detoken: U) -> impl Parser<'a, Token<'a>>
 where
     U: Fn(Token<'a>) -> Tag<'a>,
 {
     move |run: Run<'a>, deny: Deny<'a>| {
-        let (dist, tokens, token, run) = match run.first_where(&pred, deny) {
+        let (_, tokens, token, run) = match run.first_where(&pred, deny) {
             None => return ParseResult::Error,
             Some(result) => result,
         };
 
-        let tags = if tokens.is_empty() { 
-            vec![detoken(token)] 
-        } else if dist == 0 {
-            vec![Tag::Whitespace(tokens), detoken(token)]
-        } else {
-            vec![
-                Tag::UnexpectedToken {
-                    expected: token,
-                    actual: tokens,
-                }, 
-                detoken(token)
-            ]
-        };
+        let tags = output_whitespace_or_unexpected_token(tokens, token, &detoken);
 
         ParseResult::Success(token, tags, run)
     }
@@ -829,13 +835,9 @@ where
             return ParseResult::Error;
         }
 
-        let fragments = if tokens.is_empty() { 
-            vec![detoken(expect)] 
-        } else { 
-            vec![Tag::Whitespace(tokens), detoken(expect)] 
-        };
+        let tags = output_whitespace_or_unexpected_token(tokens, token, &detoken);
 
-        ParseResult::Success((), fragments, run)
+        ParseResult::Success((), tags, run)
     }
 }
 
@@ -852,21 +854,9 @@ where
             return ParseResult::Error;
         }
 
-        let (dist, val, tokens, token, run) = next.unwrap();
+        let (_, val, tokens, token, run) = next.unwrap();
 
-        let tags = if tokens.is_empty() { 
-            vec![detoken(val, token)] 
-        } else if dist == 0 {
-            vec![Tag::Whitespace(tokens), detoken(val, token)]
-        } else {
-            vec![
-                Tag::UnexpectedToken {
-                    expected: token,
-                    actual: tokens,
-                }, 
-                detoken(val, token)
-            ]
-        };
+        let tags = output_whitespace_or_unexpected_token(tokens, token, |token| detoken(val, token));
 
         ParseResult::Success(val, tags, run)
     }
@@ -1267,11 +1257,7 @@ pub fn parse_stmt_if<'a>() -> impl Parser<'a, Stmt> {
             Some(result) => result,
         };
 
-        let tags = if tokens.is_empty() {
-            vec![Tag::Keyword(Token::Else)]
-        } else {
-            vec![Tag::Whitespace(tokens), Tag::Keyword(Token::Else)]
-        };
+        let tags = output_whitespace_or_unexpected_token(tokens, Token::Else, Tag::Keyword);
 
         match parse_stmt_block().parse(next, deny) {
             ParseResult::Error => ParseResult::Error,

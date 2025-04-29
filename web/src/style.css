@@ -166,7 +166,7 @@ div.code-editor {
   border-bottom: 1px dotted blue;
 }
 
-.lint {
+.error {
   border-bottom: 2px dotted red;
   background-color: rgba(255, 0, 0, 0.05);
 }

@@ -1,8 +1,4 @@
-use core::fmt;
-use std::{collections::HashMap};
-
-use crate::lang::{lex::{Lexer, Span, Token}, parse::parse_program, run::{Correction, Corrections, Run, Tokens}};
-
+use crate::lang::ast::{parse_program, Lexer, ParseResult, Parser, Run, Tag, Token};
 
 #[derive(Debug, Clone)]
 pub struct Fragment {
@@ -13,155 +9,108 @@ pub struct Fragment {
 
 pub type Line = Vec<Fragment>;
 
+#[derive(Debug, Clone)]
 pub struct Highlight {
     pub lines: Vec<Line>,
     pub hints: Vec<String>
 } 
     
 
-struct TokenMap {
-    chars: HashMap<usize, u8>
-}
-
-impl TokenMap {
-    pub fn new<'a>(tokens: Vec<Span<Token<'a>>>) -> Self {
-        let mut map = HashMap::new();
-
-        for token in tokens {
-            let from = token.from.char;
-            let to = token.to.char;
-            let kind = match token.value {
-                Token::If => 1,
-                Token::Else => 1,
-                Token::While => 1,
-                Token::Func => 2,
-                Token::Break => 3,
-                Token::Return => 3,
-                Token::Forward => 4,
-                Token::Left => 4,
-                Token::Right => 4,
-                Token::True => 5,
-                Token::False => 5,
-                Token::Number(_) => 6,
-                Token::Identifier(_) => 7,
-                _ => 0
-            };
-
-            for i in from..to {
-                map.insert(i, kind);
-            }
-        }
-
-        TokenMap { 
-            chars: map 
-        }
-    }
-
-    pub fn check(&self, idx: usize) -> Option<&u8> {
-        self.chars.get(&idx)
-    }
-}
-
-struct CorrectionMap {
-    chars: HashMap<usize, u8>,
-    hints: Vec<String>
-}
-
-impl CorrectionMap {
-    pub fn new<'a>(corrections: Corrections<'a>) -> Self {
-        let mut chars = HashMap::new();
-        let mut hints = vec![String::new(), String::new()];
-
-        corrections.map(|c| {
-            // insert corrections into map: 
-            // "location of character" -> "index of hint"
-            // 
-            // Hint index starts at 1 because 0 is reserved hard errors
-            // that do not have a hint.
-            match c {
-                Correction::Insert(at, replacement) => {
-                    chars.insert(at.char, hints.len() as u8);
-                    hints.push(format!("Did you mean to put a {:?}?", replacement));
-                },
-                Correction::Remove(from, to) => {
-                    for i in from.char..to.char {
-                        chars.insert(i, 1);
-                    }
-                }
-            }
-        });
-
-        CorrectionMap { 
-            chars,
-            hints
-        }
-    }
-
-    pub fn check(&self, idx: usize) -> Option<&u8> {
-        self.chars.get(&idx)
+fn token_to_string(token: Token) -> String {
+    match token {
+        Token::Assign => "=".to_string(),
+        Token::Plus => "+".to_string(),
+        Token::Minus => "-".to_string(),
+        Token::Multiply => "*".to_string(),
+        Token::Divide => "/".to_string(),
+        Token::Bang => "!".to_string(),
+        Token::LessThan => "<".to_string(),
+        Token::GreaterThan => ">".to_string(),
+        Token::LessEqualThan => "<=".to_string(),
+        Token::GreaterEqualThan => ">=".to_string(),
+        Token::Equals => "==".to_string(),
+        Token::NotEqual => "!=".to_string(),
+        Token::If => "if".to_string(),
+        Token::Else => "else".to_string(),
+        Token::While => "while".to_string(),
+        Token::Func => "func".to_string(),
+        Token::Return => "return".to_string(),
+        Token::Forward => "forward".to_string(),
+        Token::Left => "left".to_string(),
+        Token::Right => "right".to_string(),
+        Token::Comma => ",".to_string(),
+        Token::SemiColon => ";".to_string(),
+        Token::LeftParen => "(".to_string(),
+        Token::RightParen => ")".to_string(),
+        Token::LeftBrace => "{".to_string(),
+        Token::RightBrace => "}".to_string(),
+        Token::Identifier(name) => name.to_string(),
+        Token::Number(num) => num.to_string(),
+        Token::Eof => "EOF".to_string(),
+        Token::Undefined(str) => str.to_string(),
+        token => unreachable!("uexpected token: \"{:?}\"", token)
     }
 }
 
 pub fn highlight(input: &str) -> Highlight {
     let tokens = Lexer::new(input).tokens();
-    let corrections = match parse_program(Run::new(&tokens)) {
-        crate::lang::run::ParseResult::Err(r) => r.corrections,
-        crate::lang::run::ParseResult::Ok(_, r) => r.corrections
+    let tags = match parse_program().parse(Run::new(&tokens), Vec::new()) {
+        ParseResult::Error => panic!("error parsing the input"),
+        ParseResult::Success(_, tags, _) => tags
     };
 
-    let correction_map = CorrectionMap::new(corrections);
-    let token_map = TokenMap::new(tokens);
+    println!("tags: {:?}", tags);
 
-    let mut current = Fragment {
-        kind: *token_map.check(0).unwrap_or(&0),
-        hint: *correction_map.check(0).unwrap_or(&0),
-        value: String::new()
-    };
-
-    let mut fragments = Vec::new();
     let mut lines = Vec::new();
+    let mut line = Vec::new();
 
-    for (i, char) in input.chars().enumerate() {
-        let &hint = correction_map.check(i).unwrap_or(&0);
-        let &kind = token_map.check(i).unwrap_or(&current.kind);
+    for tag in tags {
+        let (value, kind) = match tag {
+            Tag::LineBreak => {
+                line.push(Fragment {
+                    value: String::new(),
+                    hint: 0,
+                    kind: 0
+                });
+                
+                lines.push(line.clone());
+                line.clear();
+                continue;
+            },
 
-        if char == '\n' {
-            // transition to new line
-            fragments.push(current);
-            lines.push(fragments);
-            
-            fragments = Vec::new();
-            current = Fragment {
-                kind,
-                hint,
-                value: String::new()
-            };
+            Tag::Whitespace(str) => (vec![str.to_string()], 0),
+            Tag::Plain(token) => (vec![token_to_string(token)], 0),
+            Tag::Comment(str) => (vec![str.to_string()], 1),
+            Tag::Call(name) => (vec![name.to_string()], 2),
+            Tag::Move(token) => (vec![token_to_string(token)], 3),
+            Tag::Identifier(name) => (vec![name.to_string()], 4),
+            Tag::Number(num) => (vec![num   .to_string()], 5),
+            Tag::Keyword(token) => (vec![token_to_string(token)], 6),
 
-            continue;
-        }
-
-        if kind != current.kind || hint != current.hint {
-            if !current.value.is_empty() {
-                fragments.push(current);
+            Tag::UnexpectedToken { expected: _, actual } => {
+                (actual.iter().map(|&token| token_to_string(token)).collect(), 20)
             }
+        };
 
-            current = Fragment {
-                kind,
-                hint,
-                value: char.to_string()
-            };
-
-            continue;
+        for value in value {
+            line.push(Fragment {
+                value,
+                hint: 0,
+                kind
+            });
         }
-       
-        current.value.push(char);
     }
 
-    fragments.push(current);
-    lines.push(fragments);
+    line.push(Fragment {
+        value: String::new(),
+        hint: 0,
+        kind: 0
+    });
+    
+    lines.push(line);
     
     Highlight {
         lines,
-        hints: correction_map.hints
+        hints: Vec::new()
     }
 }

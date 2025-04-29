@@ -35,7 +35,7 @@ const readBytesFromModule = (module: WasmModule, ptr: number, len: number, cap: 
     return bytes
 }
 
-export const readReturnBytesFromModule = (module: WasmModule, ptr: number, who?: string): Uint8Array => {
+export const readReturnBytesFromModule = (module: WasmModule, ptr: number): Uint8Array => {
     const mem = new Uint32Array(module.memory.buffer, ptr, 3)
     const buffer_ptr = mem[0]
     const buffer_len = mem[1]
@@ -48,23 +48,27 @@ export const readReturnBytesFromModule = (module: WasmModule, ptr: number, who?:
 export const writeBytesToModule = (module: WasmModule, bytes: Uint8Array): number => {
     const ptr = module.exports.malloc(bytes.length) as number
     new Uint8Array(module.memory.buffer).set(bytes, ptr)
+
     return ptr
 }
 
 export const loadModule = async (path: string) => {
     let module: WasmModule | null = null
 
+    const decoder = new TextDecoder('utf-8')
+
     const env = {
         alert: (ptr: WasmPtr, len: number, cap: number) => {
             if (!module) return
             const bytes = readBytesFromModule(module, ptr, len, cap)
-            const decoded = new TextDecoder('utf-8').decode(bytes)
+            const decoded = decoder.decode(bytes)
             console.error(decoded)
         },
         print: (ptr: WasmPtr, len: number, cap: number) => {
             if (!module) return
             const bytes = readBytesFromModule(module, ptr, len, cap)
-            const decoded = new TextDecoder('utf-8').decode(bytes)
+            const decoded = decoder.decode(bytes)
+            console.log(decoded)
         }
     }
 

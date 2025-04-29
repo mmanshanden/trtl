@@ -8,6 +8,7 @@ use lang::ast::{parse_expr, parse_expr_primary, parse_program, Deny, Lexer, Pars
 
 pub mod lang;
 pub mod machine;
+pub mod wasm;
 
 fn stdout(s: &str) {
     println!("{}", s);
@@ -33,16 +34,16 @@ fn main() {
         }
     };
 
-    let mut lexer = Lexer::new(&code);
-    let tokens = lexer.tokens();
+    let r = wasm::highlight(&code);
 
+    // let mut lexer = Lexer::new(&code);
+    // let tokens = lexer.tokens();
+    // let run = Run::new(&tokens);
+    // let deny = Deny::new();
 
-    let run = Run::new(&tokens);
-    let deny = Deny::new();
+    // let p = parse_program();
 
-    let p = parse_program();
-
-    let r = p.parse(run, deny);
+    // let r = p.parse(run, deny);
 
     println!("Parse result: {:?}", r);
 
