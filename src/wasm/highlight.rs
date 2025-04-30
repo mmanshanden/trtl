@@ -1,4 +1,5 @@
-use crate::lang::ast::{parse_program, Lexer, ParseResult, Parser, Run, Tag, Token};
+use crate::lang::{parse_program, Lexer, Run, Tag, Token};
+
 
 #[derive(Debug, Clone)]
 pub struct Fragment {
@@ -54,12 +55,12 @@ fn token_to_string(token: Token) -> String {
 
 pub fn highlight(input: &str) -> Highlight {
     let tokens = Lexer::new(input).tokens();
-    let tags = match parse_program().parse(Run::new(&tokens), Vec::new()) {
-        ParseResult::Error => panic!("error parsing the input"),
-        ParseResult::Success(_, tags, _) => tags
-    };
+    let run = Run::new(&tokens);
 
-    println!("tags: {:?}", tags);
+    let tags = match parse_program(run) {
+        Err(_) => panic!("error parsing the input"),
+        Ok((_, tags)) => tags
+    };
 
     let mut lines = Vec::new();
     let mut line = Vec::new();

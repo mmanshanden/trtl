@@ -1,10 +1,8 @@
-use std::{fmt::Debug, str::Chars};
-
 /// The `Token` type
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Token<'a> {
     // util
-    Undefined,
+    Undefined(&'a str),
     Eof,
 
     // variable
@@ -53,6 +51,7 @@ pub enum Token<'a> {
     LineBreak
 }
 
+
 impl<'a> Token<'a> {
     pub fn identifier(&self) -> Option<&'a str> {
         match self {
@@ -61,66 +60,21 @@ impl<'a> Token<'a> {
         }
     }
 
-    // pub fn number(&self) -> Option<&'a str> {
-    //     match self {
-    //         Self::Number(num) => Some(num),
-    //         _ => None,
-    //     }
-    // }
+    pub fn number(&self) -> Option<&'a str> {
+        match self {
+            Self::Number(num) => Some(num),
+            _ => None,
+        }
+    }
 
-    // pub fn brace(&self) -> Option<Self> {
-    //     match self {
-    //         Self::LeftBrace => Some(Self::LeftBrace),
-    //         Self::RightBrace => Some(Self::RightBrace),
-    //         _ => None,
-    //     }
-    // }
-
-    // pub fn parenthesis(&self) -> Option<Self> {
-    //     match self {
-    //         Self::LeftParen => Some(Self::LeftParen),
-    //         Self::RightParen => Some(Self::RightParen),
-    //         _ => None,
-    //     }
-    // }
-
-    // pub fn len(&self) -> i32 {
-    //     match self {
-    //         Self::Undefined => i32::MAX,
-    //         Self::Eof => 0,
-    //         Self::Identifier(id) => id.len() as i32,
-    //         Self::Number(num) => num.len() as i32,
-    //         Self::True => 4,
-    //         Self::False => 5,
-    //         Self::Plus => 1,
-    //         Self::Minus => 1,
-    //         Self::Multiply => 1,
-    //         Self::Divide => 1,
-    //         Self::Assign => 1,
-    //         Self::Bang => 1,
-    //         Self::Equals => 2,
-    //         Self::NotEqual => 2,
-    //         Self::GreaterThan => 1,
-    //         Self::GreaterEqualThan => 2,
-    //         Self::LessThan => 1,
-    //         Self::LessEqualThan => 2,
-    //         Self::LeftParen => 1,
-    //         Self::RightParen => 1,
-    //         Self::Comma => 1,
-    //         Self::SemiColon => 1,
-    //         Self::LeftBrace => 1,
-    //         Self::RightBrace => 1,
-    //         Self::If => 2,
-    //         Self::Else => 2,
-    //         Self::While => 5,
-    //         Self::Return => 6,
-    //         Self::Break => 5,
-    //         Self::Forward => 7,
-    //         Self::Left => 4,
-    //         Self::Right => 5,
-    //         Self::Func => 4,
-    //     }
-    // }
+    pub fn dist(&self) -> usize {
+        match self {
+            Self::Whitespace(_) => 0,
+            Self::Comment(_) => 0,
+            Self::LineBreak => 0,
+            _ => 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -131,31 +85,20 @@ pub struct Loc {
     pub char: usize,
 }
 
-#[derive(Clone, Copy)]
-pub struct Span<T> {
-    pub value: T,
-    pub from: Loc,
-    pub to: Loc,
-}
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
     input: &'a str,
-    chars: Chars<'a>,
-    current_char: Option<char>,
-    current_loc: Loc,
+    current_char: Option<&'a u8>,
+    pos: Loc
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
-        let mut chars = input.chars();
-        let curr = chars.next();
-
         Lexer {
             input,
-            chars,
-            current_char: curr,
-            current_loc: Loc {
+            current_char: input.as_bytes().first(),
+            pos: Loc {
                 line: 0,
                 col: 0,
                 byte: 0,
@@ -164,170 +107,224 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn advance(&mut self) {
-        if let Some(c) = self.current_char {
-            self.current_loc.char += 1;
-            self.current_loc.byte += c.len_utf8();
+    fn is_whitespace(&self) -> bool {
+        let index = self.pos.byte;
 
-            if c == '\n' {
-                self.current_loc.line += 1;
-                self.current_loc.col = 0;
+        let p = self.input.as_bytes().get(index).copied().unwrap_or(0);
+        let q = self.input.as_bytes().get(index + 1).copied().unwrap_or(0);
+        let r = self.input.as_bytes().get(index + 2).copied().unwrap_or(0);
+
+        matches!(
+            (p, q, r), 
+            (0x09, _, _) | 
+            (0x0B, _, _) |
+            (0x0C, _, _) |
+            (0x0D, _, _) |
+            (0x20, _, _) | 
+            (0xC2, 0x85, _) |
+            (0xC2, 0xA0, _) | 
+            (0xE1, 0x9A, 0x80) | 
+            (0xE1, 0xA0, 0x8E) |
+            (0xE2, 0x80, 0x80) |
+            (0xE2, 0x80, 0x81) |
+            (0xE2, 0x80, 0x82) |
+            (0xE2, 0x80, 0x83) |
+            (0xE2, 0x80, 0x84) |
+            (0xE2, 0x80, 0x85) |
+            (0xE2, 0x80, 0x86) |
+            (0xE2, 0x80, 0x87) |
+            (0xE2, 0x80, 0x88) |
+            (0xE2, 0x80, 0x89) |
+            (0xE2, 0x80, 0x8A) |
+            (0xE2, 0x80, 0xA8) |
+            (0xE2, 0x80, 0xA9) |
+            (0xE2, 0x80, 0xAF) |
+            (0xE2, 0x81, 0x9F) |
+            (0xE3, 0x80, 0x80)
+        )
+    }
+
+    fn advance(&mut self) {
+        if let Some(&c) = self.current_char {
+            self.pos.char += 1;
+
+            if c > 0b11110000 {
+                self.pos.byte += 4;
+            } else if c > 0b11100000 {
+                self.pos.byte += 3;
+            } else if c > 0b11000000 {
+                self.pos.byte += 2;
             } else {
-                self.current_loc.col += 1;
+                self.pos.byte += 1;
+            }
+
+            if c == b'\n' {
+                self.pos.line += 1;
+                self.pos.col = 0;
+            } else {
+                self.pos.col += 1;
             }
         }
 
-        self.current_char = self.chars.next();
+        self.current_char = self.input.as_bytes().get(self.pos.byte);
     }
 
     fn read_whitespace(&mut self) -> &'a str {
-        let start = self.current_loc.byte;
+        let start = self.pos.byte;
 
-        while let Some(c) = self.current_char {
-            if !c.is_whitespace() {
-                break;
-            }
-
+        while self.is_whitespace() {
             self.advance();
         }
 
-        &self.input[start..self.current_loc.byte]
+        &self.input[start..self.pos.byte]
     }
 
     /// Returns true when given `char` cannot be part of an identifier
     /// string.
     /// 
-    fn is_forbidden_identifier_char(&self, char: char) -> bool {
+    fn is_forbidden_identifier_char(&self) -> bool {
         matches!(
-            char,
-            ',' | '.' | ';' | '(' | ')' | '-' | '+' | '/' | '*' | '^' | '='
+            self.current_char.unwrap_or(&0),
+            b',' | b'.' | b';' | b'(' | b')' | b'-' | b'+' | b'/' | b'*' | b'^' | b'='
         )
     }
 
-    fn read_identifier(&mut self) -> &'a str {
-        let start = self.current_loc.byte;
+    fn read_any(&mut self) -> &'a str {
+        let start = self.pos.byte;
 
-        while let Some(c) = self.current_char {
-            if c.is_whitespace() || self.is_forbidden_identifier_char(c) {
+        if self.current_char.is_some() {
+            self.advance();
+        }
+
+        &self.input[start..self.pos.byte]
+    }
+
+    fn read_identifier(&mut self) -> &'a str {
+        let start = self.pos.byte;
+
+        loop {
+            if self.current_char.is_none() {
+                break;
+            }
+
+            if self.is_whitespace() {
+                break;
+            }
+
+            if self.is_forbidden_identifier_char() {
                 break;
             }
 
             self.advance();
         }
 
-        &self.input[start..self.current_loc.byte]
+        &self.input[start..self.pos.byte]
     }
 
     fn read_number(&mut self) -> &'a str {
-        let start = self.current_loc.byte;
+        let start = self.pos.byte;
 
         // Everything before the delimiter
-        while self.current_char.map_or(false, |c| c.is_ascii_digit()) {
+        while self.current_char.map(|c| c.is_ascii_digit()).unwrap_or(false) {
             self.advance()
         }
 
         // The delimiter
-        if self.current_char.map_or(false, |c| c == '.') {
+        if self.current_char.map(|&c| c == b'.').unwrap_or(false) {
             self.advance()
         }
 
         // Everything after the delimiter
-        while self.current_char.map_or(false, |c| c.is_ascii_digit()) {
+        while self.current_char.map(u8::is_ascii_digit).unwrap_or(false) {
             self.advance()
         }
 
-        &self.input[start..self.current_loc.byte]
+        &self.input[start..self.pos.byte]
     }
 
-    pub fn next_token(&mut self) -> Span<Token<'a>> {
-        let start = self.current_loc;
-
+    pub fn next_token(&mut self) -> Token<'a> {
         if self.current_char.is_none() {
-            return Span {
-                value: Token::Eof,
-                from: start,
-                to: start,
-            };
+            return Token::Eof;
         }
 
         let token = match self.current_char.unwrap() {
-            ';' => {
+            b';' => {
                 self.advance();
                 Token::SemiColon
             }
-            '+' => {
+            b'+' => {
                 self.advance();
                 Token::Plus
             }
-            '-' => {
+            b'-' => {
                 self.advance();
                 Token::Minus
             }
-            '*' => {
+            b'*' => {
                 self.advance();
                 Token::Multiply
             }
-            '/' => {
+            b'/' => {
                 self.advance();
                 Token::Divide
             }
-            '=' => {
+            b'=' => {
                 self.advance();
-                if self.current_char == Some('=') {
+                if self.current_char == Some(&b'=') {
                     self.advance();
                     Token::Equals
                 } else {
                     Token::Assign
                 }
             }
-            '!' => {
+            b'!' => {
                 self.advance();
-                if self.current_char == Some('=') {
+                if self.current_char == Some(&b'=') {
                     self.advance();
                     Token::NotEqual
                 } else {
                     Token::Bang
                 }
             }
-            '>' => {
+            b'>' => {
                 self.advance();
-                if self.current_char == Some('=') {
+                if self.current_char == Some(&b'=') {
                     self.advance();
                     Token::GreaterEqualThan
                 } else {
                     Token::GreaterThan
                 }
             }
-            '<' => {
+            b'<' => {
                 self.advance();
-                if self.current_char == Some('=') {
+                if self.current_char == Some(&b'=') {
                     self.advance();
                     Token::LessEqualThan
                 } else {
                     Token::LessThan
                 }
             }
-            '(' => {
+            b'(' => {
                 self.advance();
                 Token::LeftParen
             }
-            ')' => {
+            b')' => {
                 self.advance();
                 Token::RightParen
             }
-            '{' => {
+            b'{' => {
                 self.advance();
                 Token::LeftBrace
             }
-            '}' => {
+            b'}' => {
                 self.advance();
                 Token::RightBrace
             }
-            ',' => {
+            b',' => {
                 self.advance();
                 Token::Comma
             }
-            'a'..='z' | 'A'..='Z' | '_' => match self.read_identifier() {
+            b'a'..=b'z' | b'A'..=b'Z' | b'_' => match self.read_identifier() {
                 "func" => Token::Func,
                 "if" => Token::If,
                 "else" => Token::Else,
@@ -341,52 +338,37 @@ impl<'a> Lexer<'a> {
                 "false" => Token::False,
                 id => Token::Identifier(id),
             },
-            '0'..='9' => {
+            b'0'..=b'9' => {
                 let num = self.read_number();
                 Token::Number(num)
             }
-            '\n' => {
+            b'\n' => {
                 self.advance();
                 Token::LineBreak
             }
-            c if c.is_whitespace() => {
-                self.read_whitespace();
-                Token::Whitespace(self.input[start.byte..self.current_loc.byte].trim())
+            _ if self.is_whitespace() => {
+                let whitespace = self.read_whitespace();
+                Token::Whitespace(whitespace)
             }
             _ => {
-                self.advance();
-                Token::Undefined
+                let any = self.read_any();
+                Token::Undefined(any)
             }
         };
 
-        let end = self.current_loc;
-
-        Span {
-            value: token,
-            from: start,
-            to: end,
-        }
+        token
     }
 
-    pub fn tokens(&mut self) -> Vec<Span<Token<'a>>> {
+    pub fn tokens(&mut self) -> Vec<Token<'a>> {
         let mut vec = Vec::new();
         let mut token = self.next_token();
 
-        while token.value != Token::Eof {
+        while token != Token::Eof {
             vec.push(token);
             token = self.next_token();
         }
 
         vec.push(token);
         vec
-    }
-}
-
-impl<T> Debug for Span<T>
-where
-    T: Debug,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
     }
 }

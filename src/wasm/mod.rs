@@ -1,25 +1,26 @@
 pub mod bencode;
 pub mod highlight;
 
-
 pub use bencode::benchode_highlight;
 pub use highlight::highlight;
 
-use crate::{lang::{ast::Program, compile::compile, lex::Lexer, parse::parse_program, run::Run}, machine::{canvas::{self, Canvas}, cpu::Cpu}};
+use crate::lang::{compile, parse_program, Lexer, Program, Run};
+use crate::machine::{canvas::Canvas, cpu::Cpu};
 
-/// Converts a wasm memory to a string
+
+/// Reads a section of wasm memory into a `String`.
 /// 
 unsafe fn read_string_from_mem(ptr: *mut u8, len: usize) -> String {
     let bytes = Vec::from_raw_parts(ptr, len, len);
     String::from_utf8_lossy(&bytes).to_string()
 }
 
-/// Allows the provided bytes to be read by the client. 
-/// 
-/// Returns a pointer to the 8 byte array consisting of the 4 byte pointer that
-/// points to the provided array of bytes and a 4 byte integer that marks the 
-/// length of the provided bytes.
-/// 
+/// Returns a pointer to a byte array that has a fixed size of 12 bytes. 
+/// The first 4 byte integer is the pointer to the provided bytes, the next
+/// 4 byte integer is the length in bytes, and the last 4 byte integer is 
+/// the capcity of the provided byte array, to be used by the client when
+/// freeing the memory.
+///  
 fn return_bytes(bytes: Vec<u8>) -> *const u8 {
     let ptr = bytes.as_ptr() as usize;
     let buf = vec![
@@ -144,16 +145,16 @@ fn create_cpu(ptr: *mut u8, len: usize) -> *mut Cpu {
     };
 
     let tokens = Lexer::new(&input).tokens();
+    let run = Run::new(&tokens);
 
-    let ast = match parse_program(Run::new(&tokens)) {
-        crate::lang::run::ParseResult::Err(_) => Program::new(),
-        crate::lang::run::ParseResult::Ok(ast, _) => ast
+    let program = match parse_program(run) {
+        Err(_) => Program::new(),
+        Ok((program, _)) => program
     };
 
-    let code = compile(ast).unwrap_or_default();
+    let code = compile(program).unwrap_or_default();
 
-    let cpu = Cpu::new(|str| println!("{}", str), code);
-    // let cpu = Cpu::new(|str| console_log(str.to_string()), code);
+    let cpu = Cpu::new(|str| console_log(str.to_string()), code);
     let cpu = Box::new(cpu);
 
     Box::into_raw(cpu)
