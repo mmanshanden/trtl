@@ -5,20 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   </head>
   <body>
-    <div class="h-stack full-height mh">
-      <div class="flex-3 v-stack gap-small">
-        <span class="trtl-logo">trtl</span>
-        <div class="h-stack">
-          <select id="select">
-            <option value="empty" selected></option>
-            <option value="koch">Koch snowflake</option>
-            <option value="spiral">Spiral</option>
-          </select>
-        </div>
-        <div id="editor" class="flex-1 mv"></div>
+    <div class="v-stack gap-small full-height mh mv">
+      <div class="h-stack gap-big baseline">
+        <span id="logo">trtl</span>
+        <select id="select">
+          <option value="empty" selected></option>
+          <option value="koch">Koch snowflake</option>
+          <option value="spiral">Spiral</option>
+        </select>
       </div>
-      <div id="canvas" class="flex-4 mh mv">
-        <canvas></canvas>
+      <div class="h-stack gap-small flex-1 mh mv">
+        <div id="left" class="v-stack gap-small flex-4">
+          <div id="editor" class="flex-1 flex-elem radius-small"></div>
+        </div>
+        <div id="right" class="flex-5 flex-elem">
+          <canvas id="canvas" class="radius-small"></canvas>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

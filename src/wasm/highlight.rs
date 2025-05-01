@@ -47,7 +47,7 @@ fn token_to_string(token: Token) -> String {
         Token::RightBrace => "}".to_string(),
         Token::Identifier(name) => name.to_string(),
         Token::Number(num) => num.to_string(),
-        Token::Eof => "EOF".to_string(),
+        Token::Eof => "".to_string(),
         Token::Undefined(str) => str.to_string(),
         token => unreachable!("uexpected token: \"{:?}\"", token)
     }

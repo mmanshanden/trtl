@@ -4,211 +4,250 @@ import { highlight } from './highlight'
 
 export interface Position {
     lineIndex: number,
-    charIndex: number,
-    globalIndex: number
+    charIndex: number
 }
 
 export interface Caret {
     from: Position
-    to: Position | null
+    to?: Position
 }
 
-type Content = string[]
+const toStartOfLine = (caret: Caret): Caret => {
+    return {
+        from: {
+            lineIndex: caret.from.lineIndex,
+            charIndex: 0
+        }
+    }
+}
+
+const elementLength = (node: ChildNode): number => {
+    return node.textContent?.length ?? 0
+}
+
+const positionInNode = (range: Range, node: ChildNode, side: 'start' | 'end'): number => {
+    const rel = range.cloneRange()
+
+    rel.selectNodeContents(node)
+
+    if (side === 'start') {
+        rel.setEnd(range.startContainer, range.startOffset) 
+    } else {
+        rel.setEnd(range.endContainer, range.endOffset)
+    }
+
+    return rel.toString().length
+}
+
+const positionInElement = (selection: Selection, document: HTMLDivElement, side: 'start' | 'end'): Position => {
+    const range = selection.getRangeAt(0)
+    const node = side === 'start' ? range.startContainer : range.endContainer
+
+    let absoluteIndex = 0
+    let lineIndex = 0
+
+    for (const line of document.childNodes) {
+        if (line.contains(node) || line === node) {
+            const length = positionInNode(range, line, side)
+
+            return {
+                charIndex: length,
+                lineIndex: lineIndex
+            }
+        }
+
+        lineIndex += 1
+    }
+
+    return {
+        lineIndex: 0,
+        charIndex: 0
+    }
+}
 
 export class Editor {
-    mirror: HTMLDivElement
-    input: HTMLTextAreaElement
-    gutter: HTMLDivElement
+    element: HTMLDivElement
     module: WasmModule
     bus: EventBus
 
     constructor(parent: HTMLDivElement, module: WasmModule, bus: EventBus) {
-        const [mirror, input, gutter] = this.createElement(parent) 
-        this.mirror = mirror
-        this.input = input
-        this.gutter = gutter
+        this.element = this.createElement(parent) 
         this.module = module
         this.bus = bus
 
-        this.input.addEventListener('input', (e) => {
+        this.element.addEventListener('input', () => {
             this.highlight()
-
-            this.bus.publish('contentChanged', { editor: this, content: this.getContent() })
         })
 
-        this.input.addEventListener('scroll', (e) => {
-            this.mirror.scrollTop = this.input.scrollTop
-            this.gutter.scrollTop = this.input.scrollTop
-        })
-
-        this.input.addEventListener('copy', (e) => {
-            const caret = this.getCaret()
-            if (!caret) return
-            if (caret.to) return
-
-            this.writeCurrentLineToClipboard()
-        })
-
-        this.input.addEventListener('cut', (e) => {
+        this.element.addEventListener('copy', (e) => {
             const caret = this.getCaret()
             if (!caret) return
             if (caret.to) return
             
-            this.writeCurrentLineToClipboard()
-            this.removeLine(caret.from.lineIndex)
-            this.setCaretPosition(caret.from.lineIndex, 0)
+            e.preventDefault()
+            this.writeCurrentLineToClipboard(caret)
+        })
+
+        this.element.addEventListener('cut', (e) => {
+            const caret = this.getCaret()
+            if (!caret) return
+            if (caret.to) return
+            
+            e.preventDefault()
+            this.writeCurrentLineToClipboard(caret)
+            this.removeLineByIndex(caret.from.lineIndex)
+            this.setCaret(toStartOfLine(caret))
         })
     }
 
-    private createElement(parent: HTMLDivElement): [HTMLDivElement, HTMLTextAreaElement, HTMLDivElement] {
-        parent.innerHTML = `
-            <div class="code-editor h-stack">
-                <div class="gutter"></div>
-                <div class="content flex-1">
-                    <textarea class="input" spellcheck="false"></textarea>
-                    <div class="mirror"><div class="ln"></div></div>
-                </div>
-            </div>`
-
-        const mirror = parent.querySelector<HTMLDivElement>('div.mirror')!
-        const input = parent.querySelector<HTMLTextAreaElement>('textarea.input')!
-        const gutter = parent.querySelector<HTMLDivElement>('div.gutter')!
-
-        return [mirror, input, gutter]
+    private createElement(parent: HTMLDivElement): HTMLDivElement {
+        parent.innerHTML = `<div class="code-editor" contenteditable="true" spellcheck="false" />`
+        return parent.querySelector<HTMLDivElement>('div.code-editor')!
     }
 
     private highlight() {
-        const input = this.getContent().join('\n')
-        const lines = highlight(this.module, input)
-        let mirror = ""
-        let gutter = ""
+        const caret = this.getCaret()
+        const content = this.getContent()
 
-        lines.forEach(({ fragments }, lineIndex) => {
-            mirror += `<div class="ln">`
-            gutter += `<div class="ln">${lineIndex + 1}</div>`
-    
-            fragments.forEach(({ value, kind, error, hint }) => {
-                if (value == "") {
-                    mirror += '<br>'
-                } else if (kind || error || hint) {
-                    let classes = [kind, error].filter(Boolean).join(" ")
-                    let title = Boolean(hint) ? hint : ""
-                    mirror += `<span class="${classes}" title="${title}">${value}</span>`
-                } else {
-                    mirror += value
-                }
-            })
-
-            mirror += `</div>`
-        })
-    
-        this.mirror.innerHTML = mirror
-        this.gutter.innerHTML = gutter
+        this.setContent(...content)
+        if (caret) this.setCaret(caret)
     }
 
     focus() {
-        this.input.focus()
-    }
-
-    private getIndexFromPosition(lineIndex: number, charIndex: number): number {
-        const content = this.getContent()
-        let globalIndex = 0
-
-        for (let i = 0; i < lineIndex; i++) {
-            globalIndex += content[i].length + 1
-        }
-
-        return globalIndex + charIndex
-    }
-
-    private getPositionFromIndex(index: number): Position {
-        const content = this.getContent()
-        let globalIndex = 0
-        let lineIndex = 0
-        let charIndex = 0
-
-        while (globalIndex < index) {
-            const line = content[lineIndex]
-            const length = line.length + 1
-
-            if (globalIndex + length > index) {
-                charIndex = index - globalIndex
-                break
-            }
-
-            globalIndex += length
-            lineIndex += 1
-        }
-
-        return { lineIndex, charIndex, globalIndex }
+        this.element.focus()
     }
 
     getCaret(): Caret | null {
-        const start = this.input.selectionStart;
+        const selection = document.getSelection()
 
-        if (!start) {
+        if (!selection) {
             return null
         }
-
-        const end = this.input.selectionEnd;
-
-        return {
-            from: this.getPositionFromIndex(start),
-            to: start != end ? this.getPositionFromIndex(end) : null
+    
+        let range = selection.getRangeAt(0)
+    
+        if (range.startOffset === range.endOffset && range.startContainer === range.endContainer) {
+            return {
+                from: positionInElement(selection, this.element, 'start')
+            }
         }
-    }
-
-    setCaretPosition(lineIndex: number, charIndex: number) {
-        const globalIndex = this.getIndexFromPosition(lineIndex, charIndex)
-        this.input.selectionStart = globalIndex
-        this.input.selectionEnd = globalIndex
+    
+        return {
+            from: positionInElement(selection, this.element, 'start'),
+            to: positionInElement(selection, this.element, 'end')
+        }
     }
 
     setCaret(caret: Caret) {
-        const { from, to } = caret
-        this.input.selectionStart = from.globalIndex
-        this.input.selectionEnd = to ? to.globalIndex : from.globalIndex
+        const selection = window.getSelection();
+
+        if (!selection) {
+            return
+        }
+
+        const range = document.createRange();
+
+        let { lineIndex, charIndex } = caret.from 
+        let node = this.element.childNodes[lineIndex]
+        let stack = [...node.childNodes]
+
+        while (stack.length > 0) {
+            node = stack.shift()!
+
+            if (!node) {
+                continue
+            }
+
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                stack.unshift(...node.childNodes)
+                continue
+            }
+
+            const length = elementLength(node)
+
+            if (charIndex <= length) {
+                break
+            }
+
+            charIndex = charIndex - length
+        }
+
+        range.setStart(node, Math.min(elementLength(node), charIndex))
+        range.setEnd(node, Math.min(elementLength(node), charIndex))
+
+        selection?.removeAllRanges()
+        selection?.addRange(range)
     }
 
-    selectCurrentLine() {
-        const caret = this.getCaret()
-        if (!caret) return
-
+    writeCurrentLineToClipboard(caret: Caret) {
         const content = this.getContent()
         const line = content[caret.from.lineIndex]
-        const start = content.slice(0, caret.from.lineIndex).join('\n').length
-        const end = start + line.length + 1
-
-        this.input.selectionStart = start
-        this.input.selectionEnd = end
-    }
-
-    writeCurrentLineToClipboard() {
-        const caret = this.getCaret()
-        if (!caret) return
-
-        const content = this.getContent()
-        const line = content[caret.from.lineIndex]
-
         navigator.clipboard.writeText(line)
     }
 
-    private removeLine(lineIndex: number) {
-        const newContent =  this.getContent().filter((_, i) => i != lineIndex)
-        this.setContent(...newContent)
+    removeLineByIndex(index: number) {
+        const content = this.getContent()
+        content.splice(index, 1)
+        this.setContent(...content)
     }
 
-    setContent(...content: Content) {
-        this.input.value = content.join('\n')
-        this.highlight()
+    selectCurrentLine() {
+        const selection = document.getSelection()
 
-        this.bus.publish('contentChanged', { editor: this, content })
+        if (!selection) {
+            return
+        }
+
+        const range = document.createRange()
+        const { lineIndex } = this.getCaret()!.from
+
+        const line = this.element.childNodes[lineIndex]
+
+        range.setStart(line, 0)
+        range.setEnd(line, line.childNodes.length)
+
+        selection.removeAllRanges()
+        selection.addRange(range)
     }
 
-    getContent(): Content {
-        const content = this.input.value ?? ""
-        const lines = content.split('\n')
-        return lines
+    getContent(): string[] {
+        const lines = Array.from(this.element.childNodes)
+        return lines.map(node => node.textContent ?? "")
+    }
+
+    setContent(...content: string[]) {
+        const input = content.join('\n')
+        const lines = highlight(this.module, input)
+        let html = ""
+    
+        lines.forEach(({ fragments }, lineIndex) => {
+            html += `<div class="ln">`
+    
+            fragments.forEach(({ value, kind, error, hint }) => {
+                if (value == "") {
+                    html += '<br>'
+                } else if (kind || error || hint) {
+                    let classes = [kind, error].filter(Boolean).join(" ")
+                    let title = Boolean(hint) ? hint : ""
+                    html += `<span class="${classes}" title="${title}">${value}</span>`
+                } else {
+                    html += value
+                }
+            })
+    
+            if (lineIndex === lines.length - 1) {
+                html += '<br>'
+            }
+    
+            html += `</div>`
+        })
+    
+        this.element.innerHTML = html
+
+        this.bus.publish('contentChanged', {
+            editor: this,
+            content
+        })
     }
 }
 

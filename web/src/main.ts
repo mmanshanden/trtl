@@ -28,36 +28,48 @@ const loadRenderer = (): Promise<Worker> => {
 
 const init = async () => {
     const renderer = await loadRenderer()
-    const module = await loadModule('wasm/wasm32-unknown-unknown/release/trtl.wasm')
-
-    if (!module) {
-        console.error('Failed to load wasm module')
-        return
-    }
-
+    const module = await loadModule('wasm/wasm32-unknown-unknown/debug/trtl.wasm')
     const editorElement = document.querySelector<HTMLDivElement>("div#editor")!;
-    const canvasElement = document.querySelector<HTMLCanvasElement>("div#canvas canvas")!;
+    const canvasElement = document.querySelector<HTMLCanvasElement>("canvas#canvas")!;
     
     fixCanvasDimensions(canvasElement)
     
-    const editor = new Editor(editorElement, module, bus)
+    if (module) {
+        const editor = new Editor(editorElement, module, bus)
 
-    bus.subscribe('contentChanged', () => {
-        renderer.postMessage({
-            input: editor.getContent().join('\n'),
-            width: canvasElement.width,
-            height: canvasElement.height
+        bus.subscribe('contentChanged', () => {
+            renderer.postMessage({
+                input: editor.getContent().join('\n'),
+                width: canvasElement.width,
+                height: canvasElement.height
+            })
         })
-    })
-            
-    window.addEventListener("resize", () => {
-        fixCanvasDimensions(canvasElement)
-        renderer.postMessage({
-            input: editor.getContent().join('\n'),
-            width: canvasElement.width,
-            height: canvasElement.height
+                
+        window.addEventListener("resize", () => {
+            fixCanvasDimensions(canvasElement)
+            renderer.postMessage({
+                input: editor.getContent().join('\n'),
+                width: canvasElement.width,
+                height: canvasElement.height
+            })
         })
-    })
+
+        const fileSelector = document.querySelector<HTMLSelectElement>('select')!
+
+        fileSelector.addEventListener('change', (e) => {
+            const target = e.target as HTMLSelectElement
+            const value = target.value
+
+            if (value === 'koch') {
+                editor.setContent(...shapes.koch)
+            } else if (value === 'spiral'){
+                editor.setContent(...shapes.spiral)
+            }
+        })
+
+        editor.setContent("")
+    }
+    
     
     renderer.addEventListener('message', (e) => {
         if (!canvasElement) {
@@ -72,20 +84,6 @@ const init = async () => {
         }
     })
 
-    const fileSelector = document.querySelector<HTMLSelectElement>('select')!
-
-    fileSelector.addEventListener('change', (e) => {
-        const target = e.target as HTMLSelectElement
-        const value = target.value
-
-        if (value === 'koch') {
-            editor.setContent(...shapes.koch)
-        } else if (value === 'spiral'){
-            editor.setContent(...shapes.spiral)
-        }
-    })
-
-    editor.setContent("")
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
