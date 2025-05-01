@@ -107,6 +107,10 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn is_newline(&self) -> bool {
+        self.current_char == Some(&b'\n')
+    }
+
     fn is_whitespace(&self) -> bool {
         let index = self.pos.byte;
 
@@ -207,7 +211,7 @@ impl<'a> Lexer<'a> {
                 break;
             }
 
-            if self.is_whitespace() {
+            if self.is_whitespace() || self.is_newline() {
                 break;
             }
 

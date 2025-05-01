@@ -81,9 +81,24 @@ html, body {
   margin-bottom: 0.4rem;
 }
 
+.ph {
+  padding-left: 0.4rem;
+  padding-right: 0.4rem;
+}
+
+.pv {
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+}
+
 .radius-small {
   border-radius: 0.4rem;
 }
+
+.elevated {
+  box-shadow: 0 0 0.1rem rgba(0, 0, 0, 0.2);
+}
+
 
 .baseline {
   display: flex;

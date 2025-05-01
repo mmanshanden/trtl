@@ -66,48 +66,79 @@ pub fn highlight(input: &str) -> Highlight {
     let mut line = Vec::new();
 
     for tag in tags {
-        let (value, kind) = match tag {
+        match tag {
             Tag::LineBreak => {
-                line.push(Fragment {
-                    value: String::new(),
-                    hint: 0,
-                    kind: 0
-                });
-                
-                lines.push(line.clone());
-                line.clear();
-                continue;
+                lines.push(line);
+                line = Vec::new();
             },
 
-            Tag::Whitespace(str) => (vec![str.to_string()], 0),
-            Tag::Plain(token) => (vec![token_to_string(token)], 0),
-            Tag::Comment(str) => (vec![str.to_string()], 1),
-            Tag::Call(name) => (vec![name.to_string()], 2),
-            Tag::Move(token) => (vec![token_to_string(token)], 3),
-            Tag::Identifier(name) => (vec![name.to_string()], 4),
-            Tag::Number(num) => (vec![num   .to_string()], 5),
-            Tag::Keyword(token) => (vec![token_to_string(token)], 6),
+            Tag::Whitespace(str) => {
+                line.push(Fragment {
+                    value: str.to_string(),
+                    kind: 0,
+                    hint: 0
+                });
+            },
+            Tag::Plain(token) => {
+                line.push(Fragment {
+                    value: token_to_string(token),
+                    kind: 0,
+                    hint: 0
+                });
+            },
+            Tag::Comment(str) => {
+                line.push(Fragment {
+                    value: str.to_string(),
+                    kind: 1,
+                    hint: 0
+                });
+            },
+            Tag::Call(name) => {
+                line.push(Fragment {
+                    value: name.to_string(),
+                    kind: 2,
+                    hint: 0
+                });
+            },
+            Tag::Move(token) => {
+                line.push(Fragment {
+                    value: token_to_string(token),
+                    kind: 3,
+                    hint: 0
+                });
+            },
+            Tag::Identifier(name) => {
+                line.push(Fragment {
+                    value: name.to_string(),
+                    kind: 4,
+                    hint: 0
+                });
+            },
+            Tag::Number(num) => {
+                line.push(Fragment {
+                    value: num   .to_string(),
+                    kind: 5,
+                    hint: 0
+                });
+            },
+            Tag::Keyword(token) => {
+                line.push(Fragment {
+                    value: token_to_string(token),
+                    kind: 6,
+                    hint: 0
+                });
+            },
 
-            Tag::UnexpectedToken { expected: _, actual } => {
-                (actual.iter().map(|&token| token_to_string(token)).collect(), 20)
+            Tag::UnexpectedToken { expected: _, actual } => for &token in actual {
+                line.push(Fragment {
+                    value: token_to_string(token),
+                    kind: 20,
+                    hint: 0
+                });
             }
         };
-
-        for value in value {
-            line.push(Fragment {
-                value,
-                hint: 0,
-                kind
-            });
-        }
     }
 
-    line.push(Fragment {
-        value: String::new(),
-        hint: 0,
-        kind: 0
-    });
-    
     lines.push(line);
     
     Highlight {

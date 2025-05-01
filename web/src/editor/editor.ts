@@ -221,12 +221,15 @@ export class Editor {
         let html = ""
     
         lines.forEach(({ fragments }, lineIndex) => {
+            if (fragments.length === 0) {
+                html += `<div class="ln"><br></div>`
+                return
+            }
+
             html += `<div class="ln">`
     
             fragments.forEach(({ value, kind, error, hint }) => {
-                if (value == "") {
-                    html += '<br>'
-                } else if (kind || error || hint) {
+                if (kind || error || hint) {
                     let classes = [kind, error].filter(Boolean).join(" ")
                     let title = Boolean(hint) ? hint : ""
                     html += `<span class="${classes}" title="${title}">${value}</span>`
@@ -234,10 +237,6 @@ export class Editor {
                     html += value
                 }
             })
-    
-            if (lineIndex === lines.length - 1) {
-                html += '<br>'
-            }
     
             html += `</div>`
         })
