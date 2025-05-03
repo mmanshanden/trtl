@@ -1,6 +1,7 @@
 import { WasmModule } from '../wasm/wasm'
 import { EventBus } from './bus'
 import { highlight } from './highlight'
+import { Undo } from './undo'
 
 export interface Position {
     lineIndex: number,
@@ -10,6 +11,12 @@ export interface Position {
 export interface Caret {
     from: Position
     to?: Position
+}
+
+interface History {
+    input_html: string,
+    gutter_html: string,
+    caret: Caret | null,
 }
 
 const toStartOfLine = (caret: Caret): Caret => {
@@ -43,7 +50,6 @@ const positionInElement = (selection: Selection, document: HTMLDivElement, side:
     const range = selection.getRangeAt(0)
     const node = side === 'start' ? range.startContainer : range.endContainer
 
-    let absoluteIndex = 0
     let lineIndex = 0
 
     for (const line of document.childNodes) {
@@ -66,20 +72,25 @@ const positionInElement = (selection: Selection, document: HTMLDivElement, side:
 }
 
 export class Editor {
-    element: HTMLDivElement
+    gutter: HTMLDivElement
+    input: HTMLDivElement
     module: WasmModule
     bus: EventBus
+    state: Undo
 
     constructor(parent: HTMLDivElement, module: WasmModule, bus: EventBus) {
-        this.element = this.createElement(parent) 
+        const [gutter, input] = this.createElement(parent) 
+        this.gutter = gutter
+        this.input = input
         this.module = module
         this.bus = bus
+        this.state = new Undo()
 
-        this.element.addEventListener('input', () => {
+        this.input.addEventListener('input', () => {
             this.highlight()
         })
 
-        this.element.addEventListener('copy', (e) => {
+        this.input.addEventListener('copy', (e) => {
             const caret = this.getCaret()
             if (!caret) return
             if (caret.to) return
@@ -88,7 +99,7 @@ export class Editor {
             this.writeCurrentLineToClipboard(caret)
         })
 
-        this.element.addEventListener('cut', (e) => {
+        this.input.addEventListener('cut', (e) => {
             const caret = this.getCaret()
             if (!caret) return
             if (caret.to) return
@@ -98,11 +109,29 @@ export class Editor {
             this.removeLineByIndex(caret.from.lineIndex)
             this.setCaret(toStartOfLine(caret))
         })
+
+        this.input.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key == "z") {
+                e.preventDefault()
+                this.undo()
+            } else if (e.ctrlKey && e.key == "y") {
+                e.preventDefault()
+                this.redo()
+            }
+        })
     }
 
-    private createElement(parent: HTMLDivElement): HTMLDivElement {
-        parent.innerHTML = `<div class="code-editor" contenteditable="true" spellcheck="false" />`
-        return parent.querySelector<HTMLDivElement>('div.code-editor')!
+    private createElement(parent: HTMLDivElement): [HTMLDivElement, HTMLDivElement] {
+        parent.innerHTML = 
+        `<div class="code-editor">
+            <div class="gutter"><span>1</span></div>
+            <div class="input" contenteditable="true" spellcheck="false"></div>
+        </div>`;
+
+        const gutter = parent.querySelector<HTMLDivElement>('div.code-editor div.gutter')!
+        const input = parent.querySelector<HTMLDivElement>('div.code-editor div.input')!
+
+        return [gutter, input]
     }
 
     private highlight() {
@@ -114,7 +143,7 @@ export class Editor {
     }
 
     focus() {
-        this.element.focus()
+        this.input.focus()
     }
 
     getCaret(): Caret | null {
@@ -124,31 +153,47 @@ export class Editor {
             return null
         }
     
-        let range = selection.getRangeAt(0)
-    
-        if (range.startOffset === range.endOffset && range.startContainer === range.endContainer) {
-            return {
-                from: positionInElement(selection, this.element, 'start')
+        try {
+            let range = selection.getRangeAt(0)
+            
+            if (range.startOffset === range.endOffset && range.startContainer === range.endContainer) {
+                return {
+                    from: positionInElement(selection, this.input, 'start')
+                }
             }
-        }
-    
-        return {
-            from: positionInElement(selection, this.element, 'start'),
-            to: positionInElement(selection, this.element, 'end')
+        
+            return {
+                from: positionInElement(selection, this.input, 'start'),
+                to: positionInElement(selection, this.input, 'end')
+            }
+        } catch {
+            return null
         }
     }
 
-    setCaret(caret: Caret) {
+    setCaret(caret: Caret | null) {
+        if (!caret) {
+            this.focus()
+            return
+        }
+
         const selection = window.getSelection();
 
         if (!selection) {
+            this.focus()
             return
         }
 
         const range = document.createRange();
 
         let { lineIndex, charIndex } = caret.from 
-        let node = this.element.childNodes[lineIndex]
+        let node = this.input.childNodes[lineIndex]
+
+        if (!node) {
+            this.focus()
+            return
+        }
+
         let stack = [...node.childNodes]
 
         while (stack.length > 0) {
@@ -201,7 +246,7 @@ export class Editor {
         const range = document.createRange()
         const { lineIndex } = this.getCaret()!.from
 
-        const line = this.element.childNodes[lineIndex]
+        const line = this.input.childNodes[lineIndex]
 
         range.setStart(line, 0)
         range.setEnd(line, line.childNodes.length)
@@ -210,39 +255,79 @@ export class Editor {
         selection.addRange(range)
     }
 
+    undo() {
+        const state = this.state.undo()
+        if (!state) return
+
+        console.log(state)
+
+        this.input.innerHTML = state.input_html
+        this.gutter.innerHTML = state.gutter_html
+
+        if (state.caret) this.setCaret(state.caret)
+    }
+
+    redo() {
+        const state = this.state.redo()
+        if (!state) return
+
+        this.input.innerHTML = state.input_html
+        this.gutter.innerHTML = state.gutter_html
+
+        if (state.caret) this.setCaret(state.caret)
+    }
+
     getContent(): string[] {
-        const lines = Array.from(this.element.childNodes)
+        const lines = Array.from(this.input.childNodes)
         return lines.map(node => node.textContent ?? "")
     }
 
     setContent(...content: string[]) {
         const input = content.join('\n')
         const lines = highlight(this.module, input)
-        let html = ""
+
+        let gutter_html = ""
+        let input_html = ""
     
         lines.forEach(({ fragments }, lineIndex) => {
+            gutter_html += `<span>${lineIndex + 1}</span>`
+
             if (fragments.length === 0) {
-                html += `<div class="ln"><br></div>`
+                input_html += `<div class="ln"><br></div>`
                 return
             }
 
-            html += `<div class="ln">`
+            input_html += `<div class="ln">`
     
             fragments.forEach(({ value, kind, error, hint }) => {
                 if (kind || error || hint) {
                     let classes = [kind, error].filter(Boolean).join(" ")
                     let title = Boolean(hint) ? hint : ""
-                    html += `<span class="${classes}" title="${title}">${value}</span>`
+                    input_html += `<span class="${classes}" title="${title}">${value}</span>`
                 } else {
-                    html += value
+                    input_html += value
                 }
             })
     
-            html += `</div>`
+            input_html += `</div>`
         })
-    
-        this.element.innerHTML = html
 
+        // This is a case where a single fragment containing an empty string as value
+        // is returned. We do not want this empty div element to be in the contenteditable
+        // because it will stay trailing behind the normal input.
+        if (input_html === `<div class="ln"></div>`) {
+            input_html = ""
+        }
+
+        this.state.push({
+            caret: this.getCaret(),
+            input_html,
+            gutter_html 
+        });
+    
+        this.gutter.innerHTML = gutter_html
+        this.input.innerHTML = input_html
+  
         this.bus.publish('contentChanged', {
             editor: this,
             content

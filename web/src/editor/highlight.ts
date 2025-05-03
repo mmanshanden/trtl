@@ -15,19 +15,6 @@ interface Line {
     fragments: Array<Fragment>
 }
 
-// Tag::Whitespace(str) => (vec![str.to_string()], 0),
-// Tag::Plain(token) => (vec![token_to_string(token)], 0),
-// Tag::Comment(str) => (vec![str.to_string()], 1),
-// Tag::Call(name) => (vec![name.to_string()], 2),
-// Tag::Move(token) => (vec![token_to_string(token)], 3),
-// Tag::Identifier(name) => (vec![name.to_string()], 4),
-// Tag::Number(num) => (vec![num.to_string()], 5),
-// Tag::Keyword(token) => (vec![token_to_string(token)], 6),
-
-// Tag::UnexpectedToken { expected: _, actual } => {
-//     (actual.iter().map(|&token| token_to_string(token)).collect(), 20)
-// }
-
 const translate_kind = (kind: number): Style | undefined => {
     if (kind === 1) {
         return 'comment'

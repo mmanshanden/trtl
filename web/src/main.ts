@@ -67,6 +67,7 @@ const init = async () => {
             }
         })
 
+        editor.focus()
         editor.setContent("")
     }
     
