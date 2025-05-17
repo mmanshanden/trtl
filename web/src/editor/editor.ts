@@ -13,11 +13,6 @@ export interface Caret {
     to?: Position
 }
 
-interface History {
-    input_html: string,
-    gutter_html: string,
-    caret: Caret | null,
-}
 
 const toStartOfLine = (caret: Caret): Caret => {
     return {
@@ -118,6 +113,47 @@ export class Editor {
                 e.preventDefault()
                 this.redo()
             }
+
+            const caret = this.getCaret()
+
+            if (e.key == "Enter" || e.key == " ") {
+                if (!caret) {
+                    return
+                }
+
+                this.state.push({
+                    caret,
+                    input_html: this.input.innerHTML,
+                    gutter_html: this.gutter.innerHTML
+                });
+            }
+
+            if (e.key == "Tab") {
+                if (!caret) {
+                    return
+                }
+
+                e.preventDefault()
+                
+                this.state.push({
+                    caret,
+                    input_html: this.input.innerHTML,
+                    gutter_html: this.gutter.innerHTML
+                });
+
+                const offset = caret.from.charIndex % 2;
+                const whitespace = " ".repeat(offset === 0 ? 2 : offset)
+
+                this.insert(caret.from.lineIndex, caret.from.charIndex, whitespace)
+
+                this.setCaret({
+                    from: {
+                        lineIndex: caret.from.lineIndex,
+                        charIndex: caret.from.charIndex + whitespace.length
+                    }
+                })
+
+            }
         })
     }
 
@@ -140,6 +176,16 @@ export class Editor {
 
         this.setContent(...content)
         if (caret) this.setCaret(caret)
+    }
+
+    insert(line: number, col: number, value: string) {
+        const content = this.getContent()
+        const before = content[line].slice(0, col)
+        const after = content[line].slice(col)
+
+        content[line] = before + value + after
+
+        this.setContent(...content)
     }
 
     focus() {
@@ -318,12 +364,6 @@ export class Editor {
         if (input_html === `<div class="ln"></div>`) {
             input_html = ""
         }
-
-        this.state.push({
-            caret: this.getCaret(),
-            input_html,
-            gutter_html 
-        });
     
         this.gutter.innerHTML = gutter_html
         this.input.innerHTML = input_html

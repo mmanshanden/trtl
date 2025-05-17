@@ -2,7 +2,7 @@ import { Canvas } from "./wasm/canvas"
 import { Cpu } from "./wasm/cpu"
 import { loadModule } from "./wasm/wasm"
 
-const module = await loadModule('../wasm/wasm32-unknown-unknown/debug/trtl.wasm')
+const module = await loadModule('../wasm/wasm32-unknown-unknown/release/trtl.wasm')
 
 let cpu: Cpu | null = null
 let canvas: Canvas | null = null

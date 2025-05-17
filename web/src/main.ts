@@ -2,8 +2,8 @@ import './style.css'
 import { Editor } from './editor/editor';
 import { loadModule } from './wasm/wasm';
 import { EventBus } from './editor/bus';
-import { Input } from './editor/input';
 import { shapes } from './shapes';
+import { Editor2 } from './editor/editor2';
 
 const bus = new EventBus()
 
@@ -28,7 +28,7 @@ const loadRenderer = (): Promise<Worker> => {
 
 const init = async () => {
     const renderer = await loadRenderer()
-    const module = await loadModule('wasm/wasm32-unknown-unknown/debug/trtl.wasm')
+    const module = await loadModule('wasm/wasm32-unknown-unknown/release/trtl.wasm')
     const editorElement = document.querySelector<HTMLDivElement>("div#editor")!;
     const canvasElement = document.querySelector<HTMLCanvasElement>("canvas#canvas")!;
     
@@ -36,6 +36,7 @@ const init = async () => {
     
     if (module) {
         const editor = new Editor(editorElement, module, bus)
+        const editor2 = new Editor2(editorElement, module)
 
         bus.subscribe('contentChanged', () => {
             renderer.postMessage({

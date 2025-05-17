@@ -1,4 +1,4 @@
-import { decode, DecodeResult } from "../wasm/benocde"
+import { decode } from "../wasm/benocde"
 import { WasmModule, readReturnBytesFromModule, writeBytesToModule } from "../wasm/wasm"
 
 type Style = 'keyword' | 'flow' |  'identifier' | 'number' | 'constant' | 'func' | 'instruction' | 'comment' | 'error'

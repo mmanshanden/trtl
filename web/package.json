@@ -5,16 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build --config vite.config.js",
     "preview": "vite preview"
   },
   "devDependencies": {
-    "kill-port": "^2.0.1",
-    "typescript": "^5.5.3",
-    "vite": "^5.4.1"
-  },
-  "dependencies": {
-    "trtl-web": "file:",
-    "trtl-web-2": "file:"
+    "typescript": "5.8.3",
+    "vite": "6.3.5"
   }
 }
