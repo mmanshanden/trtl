@@ -35,12 +35,11 @@ const init = async () => {
     fixCanvasDimensions(canvasElement)
     
     if (module) {
-        const editor = new Editor(editorElement, module, bus)
-        const editor2 = new Editor2(editorElement, module)
+        const editor = new Editor2(editorElement, module)
 
-        bus.subscribe('contentChanged', () => {
+        editor.addEventListener('render', () => {
             renderer.postMessage({
-                input: editor.getContent().join('\n'),
+                input: editor.getContent(),
                 width: canvasElement.width,
                 height: canvasElement.height
             })
@@ -49,7 +48,7 @@ const init = async () => {
         window.addEventListener("resize", () => {
             fixCanvasDimensions(canvasElement)
             renderer.postMessage({
-                input: editor.getContent().join('\n'),
+                input: editor.getContent(),
                 width: canvasElement.width,
                 height: canvasElement.height
             })
@@ -62,9 +61,9 @@ const init = async () => {
             const value = target.value
 
             if (value === 'koch') {
-                editor.setContent(...shapes.koch)
+                editor.setContent(shapes.koch.join("\n"))
             } else if (value === 'spiral'){
-                editor.setContent(...shapes.spiral)
+                editor.setContent(shapes.spiral.join("\n"))
             }
         })
 

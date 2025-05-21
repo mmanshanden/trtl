@@ -152,34 +152,30 @@ html, body {
     text-wrap: nowrap;
     white-space: pre;
 
-    .ln {
-      display: block;
+    .keyword {
+      color: blue;
+    }
 
-      .keyword {
-        color: blue;
-      }
+    .func {
+      color: blue;
+    }
 
-      .func {
-        color: blue;
-      }
+    .identifier {
 
-      .identifier {
+    }
 
-      }
+    .instruction {
+      color: rgb(65, 0, 65);
+      font-weight: bold;
+    }
 
-      .instruction {
-        color: rgb(65, 0, 65);
-        font-weight: bold;
-      }
+    .number {
+      color: darkolivegreen;
+    }
 
-      .number {
-        color: darkolivegreen;
-      }
-
-      .error {
-        border-bottom: 2px dotted red;
-        background-color: rgba(255, 0, 0, 0.05);
-      }
+    .error {
+      border-bottom: 2px dotted red;
+      background-color: rgba(255, 0, 0, 0.05);
     }
   }
 }
