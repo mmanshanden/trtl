@@ -42,7 +42,7 @@ extern "C" {
     fn alert(start: usize, len: usize, cap: usize);
 }
 
-fn console_log(msg: String) {
+pub fn console_log(msg: String) {
     let ptr = msg.as_ptr();
     let len = msg.len();
     let cap = msg.capacity();

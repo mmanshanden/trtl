@@ -59,8 +59,10 @@ const init = async () => {
 
             if (value === 'koch') {
                 editor.setContent(shapes.koch.join("\n"))
-            } else if (value === 'spiral'){
+            } else if (value === 'spiral') {
                 editor.setContent(shapes.spiral.join("\n"))
+            } else if (value === 'emoji_test') {
+                editor.setContent(shapes.emoji_test.join("\n"))
             }
         })
 

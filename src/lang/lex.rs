@@ -152,11 +152,11 @@ impl<'a> Lexer<'a> {
         if let Some(&c) = self.current_char {
             self.pos.char += 1;
 
-            if c > 0b11110000 {
+            if c >= 0b11110000 {
                 self.pos.byte += 4;
-            } else if c > 0b11100000 {
+            } else if c >= 0b11100000 {
                 self.pos.byte += 3;
-            } else if c > 0b11000000 {
+            } else if c >= 0b11000000 {
                 self.pos.byte += 2;
             } else {
                 self.pos.byte += 1;

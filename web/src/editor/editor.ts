@@ -1,5 +1,6 @@
 import { WasmModule } from "../wasm/wasm"
 import { highlight } from "./highlight"
+import { deleteRange, insert, mergeLines, removeChars } from "./util"
 
 
 const WORD_BOUNDARY = /[\s-\+\*\/\\\(\)\.\[\]\{\}\;\=\:\<\>\?\%\^\!\@\#\$\&\`\'\"]/
@@ -15,146 +16,12 @@ export interface Caret {
 }
 
 
-class Content {
-    private lines: string[]
-
-    constructor(content: string[]) {
-        this.lines = content
-    }
-
-    lineCount(): number {
-        return this.lines.length
-    }
-
-    lengthOfLine(line_index: number): number {
-        return this.lines[line_index].length
-    }
-
-    string(): string {
-        return this.lines.join("\n")
-    }
-
-    private first(): string {
-        if (this.lines.length === 0) {
-            return ""
-        }
-
-        return this.lines[0]
-    }
-
-    private last(): string {
-        if (this.lines.length === 0) {
-            return ""
-        }
-
-        return this.lines[this.lines.length - 1]
-    }
-
-    private prepend(content: Content): Content {
-        const remainder = content.lines.slice(0, -1)
-        const last = content.lines.at(-1) ?? ""
-
-        return new Content([
-            ...remainder,
-            last + this.lines[0],
-            ...this.lines.slice(1)
-        ])
-    }
-
-    private append(content: Content): Content {
-        const [first, ...remainder] = content.lines
-
-        return new Content([
-            ...this.lines.slice(0, -1),
-            this.last() + first,
-            ...remainder
-        ])
-    }
-    
-    private split(position: Position): [Content, Content] {
-        const before = this.lines.slice(0, position.lineIndex + 1)
-        const after = this.lines.slice(position.lineIndex)
-
-        // Remove the characters that come after the give position
-        before[before.length - 1] = before[before.length - 1].slice(0, position.charIndex)
-
-        // And also remove the character before the given position
-        after[0] = after[0].slice(position.charIndex)
-
-        return [new Content(before), new Content(after)]
-    }
-
-    startOfWord(position: Position): Position {
-        const line = this.lines[position.lineIndex]
-        const char = line.charAt(position.charIndex - 1)
-
-        const isBoundary = /\s/.test(char) ? /\S/ : WORD_BOUNDARY
-
-        for (let i = position.charIndex - 1; i >= 0; i--) {
-            if (isBoundary.test(line[i])) {
-                return {
-                    charIndex: i + 1 === position.charIndex ? i : i + 1,
-                    lineIndex: position.lineIndex
-                }
-            }
-        }
-
-        return {
-            charIndex: 0,
-            lineIndex: position.lineIndex
-        }
-    }
-
-
-    keepRange(from: Position, to: Position): Content {
-        const [content, _after] = this.split(to)
-        const [_before, middle] = content.split(from)
-
-        return middle
-    }
-
-    deleteRange(from: Position, to: Position): Content {
-        const [content, after] = this.split(to)
-        const [before, _middle] = content.split(from)
-
-        return before.append(after)
-    }
-
-    insert(data: string[], position: Position): Content { 
-        const [before, after] = this.split(position)
-        const insert = new Content(data)
-
-        return before.append(insert).append(after)
-    }
-
-    mergeLines(index_from: number, index_to: number): Content {
-        const lines_before = this.lines.slice(0, index_from)
-        const lines_after = this.lines.slice(index_to + 1)
-
-        const middle = this.lines.slice(index_from, index_to + 1).join("")
-
-        return new Content([
-            ...lines_before,
-            middle,
-            ...lines_after
-        ])
-    }
-
-    removeChars(line: number, from: number, to: number): Content {
-        return new Content([
-            ...this.lines.slice(0, line),
-            this.lines[line].substring(0, from) + this.lines[line].substring(to),
-            ...this.lines.slice(line + 1)
-        ])
-    }
-}
-
-
 export class Editor extends EventTarget {
     gutter: HTMLDivElement
     input: HTMLDivElement
     module: WasmModule
-    private content: Content
+    private content: string[]
+    private caret: Caret | null
 
     constructor(parent: HTMLDivElement, module: WasmModule) {
         super()
@@ -163,21 +30,39 @@ export class Editor extends EventTarget {
         this.gutter = gutter
         this.input = input
         this.module = module
-        this.content = new Content([""])
+        this.content = [""]
+        this.caret = null
 
         this.input.addEventListener('beforeinput', (e) => {
-            this.handleInputEvent(e as InputEvent)
             e.preventDefault()
+
+            const event = e as InputEvent
+            if (event.inputType === 'insertCompositionText') return
+            if (event.isComposing) return
+
+
+            this.caret = this.handleInputEvent(e as InputEvent)
+            this.setCaret(this.caret)
+
         })
 
         this.input.addEventListener('input', (e) => {
-            const event = e as InputEvent
-
-            if (event.isComposing) return
-            if (event.inputType != 'insertCompositionText') return
-
-            this.insertText(event.data!)
             e.preventDefault()
+            
+            const event = e as InputEvent
+            if (event.isComposing) return
+            if (!event.isTrusted) return
+
+            this.render()
+            this.setCaret(this.caret)
+
+        })
+
+         this.input.addEventListener('compositionend', (e) => {
+             e.preventDefault()
+
+            this.caret = this.insertText(e.data)
+            this.setCaret(this.caret)
         })
 
         this.input.addEventListener('keydown', (e) => {
@@ -198,7 +83,7 @@ export class Editor extends EventTarget {
         parent.innerHTML = 
             `<div class="code-editor">
                 <div class="gutter"><span>1</span></div>
-                <div class="input" contenteditable="true" spellcheck="false"></div>
+                <div class="input" contenteditable="true" autocapitalize="off" autocomplete="off" spellcheck="false" autocorrect="off"></div>
             </div>`;
 
         const gutter = parent.querySelector<HTMLDivElement>('div.code-editor div.gutter')!
@@ -212,7 +97,7 @@ export class Editor extends EventTarget {
     // Invariant: the node referenced by `this.input` contains one `div.ln` node for
     // for every line of the rendered state.
     private render() {
-        const input = this.content.string()
+        const input = this.getContent()
         const lines = highlight(this.module, input)
 
         let gutter_html = ""
@@ -251,32 +136,27 @@ export class Editor extends EventTarget {
         this.dispatchEvent(new Event("render"))
     }
 
-    private handleInputEvent(e: InputEvent) {
-        const caret = this.getCaret()
-
-        if (caret == null) {
-            throw new Error("INPUT_WITHOUT_CARET")
-        }
-
+    private handleInputEvent(e: InputEvent): Caret | null {
         switch (e.inputType) {
             case "deleteContentForward":
-                this.deleteForward()
-                break
+                return this.deleteForward()
+            case "deleteByCut":
             case "deleteContentBackward":
-                this.deleteBackward()
-                break
+                return this.deleteBackward()
             case "deleteWordBackward":
-                this.deleteBackward(true)
-                break
+                return this.deleteBackward(true)
             case "insertParagraph":
             case "insertLineBreak":
-                this.insertLine()
-                break
+                return this.insertLine()
+            case "insertCompositionText":
             case "insertText":
-                this.insertText(e.data!)
-                break
-
+                return this.insertText(e.data!)
+            case "insertFromPaste":
+                const data = e.dataTransfer ? e.dataTransfer.getData("text/plain") : ""
+                return this.insertText(data)
         }
+
+        return null
     }
 
     private getCaretLineIndex(container: Node, offset: number): number {
@@ -298,7 +178,6 @@ export class Editor extends EventTarget {
     }
 
     private getCaretCharIndex(container: Node, offset: number): number {
-
         // Walk back until the `div.ln` node is reached, which, as per the invariant,
         // is the node for which the parent is `this.input`
 
@@ -315,12 +194,33 @@ export class Editor extends EventTarget {
         return offset
     }
 
+    private startOfWord(position: Position): Position {
+        const line = this.content[position.lineIndex]
+        const char = line.charAt(position.charIndex - 1)
+
+        const isBoundary = /\s/.test(char) ? /\S/ : WORD_BOUNDARY
+
+        for (let i = position.charIndex - 1; i >= 0; i--) {
+            if (isBoundary.test(line[i])) {
+                return {
+                    charIndex: i + 1 === position.charIndex ? i : i + 1,
+                    lineIndex: position.lineIndex
+                }
+            }
+        }
+
+        return {
+            charIndex: 0,
+            lineIndex: position.lineIndex
+        }
+    }
+
     focus() {
         this.input.focus()
     }
 
     setContent(content: string) {
-        this.content = new Content(content.split("\n"))
+        this.content = content.split("\n")
 
         this.render()
         this.setCaret({
@@ -332,7 +232,7 @@ export class Editor extends EventTarget {
     }
 
     getContent(): string {
-        return this.content.string()
+        return this.content.join("\n")
     }
 
     getCaret(): Caret | null {
@@ -363,8 +263,8 @@ export class Editor extends EventTarget {
                         charIndex: this.getCaretCharIndex(range.startContainer, range.startOffset)
                     },
                     to: {
-                        lineIndex: this.content.lineCount() - 1,
-                        charIndex: this.content.lengthOfLine(this.content.lineCount() - 1)
+                        lineIndex: this.content.length,
+                        charIndex: this.content[this.content.length - 1].length
                     }
                 }
             }
@@ -409,7 +309,7 @@ export class Editor extends EventTarget {
         }
 
         const elementLength = (node: ChildNode): number => {
-           return node.textContent?.length ?? 0
+           return node.textContent ? node.textContent.length : 0
         }
 
         // Use a stack to walk through all the child nodes of the `div.ln` node
@@ -450,147 +350,146 @@ export class Editor extends EventTarget {
     }
 
 
-    insertLine() {
+    insertLine(): Caret {
         const caret = this.getCaret()
         if (!caret) throw new Error("NO_CARET")
 
         if (caret.to) {
-            this.content = this.content.deleteRange(caret.from, caret.to)
+            this.content = deleteRange(this.content, caret.from, caret.to)
         }
         
-        this.content = this.content.insert(["", ""], caret.from)
+        this.content = insert(this.content, ["", ""], caret.from)
 
         this.render()
-        this.setCaret({
+        
+        return {
             from: {
                 charIndex: 0,
                 lineIndex: caret.from.lineIndex + 1,
             }
-        })
+        }
     }
 
-    insertText(text: string) {
+    insertText(text: string): Caret {
         const caret = this.getCaret()
         if (!caret) throw new Error("NO_CARET")
  
         if (caret.to) {
-            this.content = this.content.deleteRange(caret.from, caret.to)
+            this.content = deleteRange(this.content, caret.from, caret.to)
         }
 
-        this.content = this.content.insert([text], caret.from)
-
+        const data = text.split("\n")
+        this.content = insert(this.content, data, caret.from)
         this.render()
-        this.setCaret({
+
+        return {
             from: {
-                charIndex: caret.from.charIndex + text.length,
-                lineIndex: caret.from.lineIndex
+                charIndex: data.length === 1 ? caret.from.charIndex + data[0].length : data[data.length - 1].length,
+                lineIndex: data.length === 1 ? caret.from.lineIndex : caret.from.lineIndex + data.length - 1
             }
-        })
+        }
     }
 
-    deleteBackward(word?: boolean) {
+    deleteBackward(word?: boolean): Caret {
         const caret = this.getCaret()
         if (!caret) throw new Error("NO_CARET")
 
         if (caret.to) {
-            this.content = this.content.deleteRange(caret.from, caret.to)
+            this.content = deleteRange(this.content, caret.from, caret.to)
 
             this.render()
-            this.setCaret({ 
-                from: caret.from 
-            })
 
-            return
+            return { 
+                from: caret.from 
+            }
         }
 
         // Check for position at which a backward delete does nothing
         if (caret.from.charIndex === 0 && 
             caret.from.lineIndex === 0) {
-            return
+            return caret
         }
 
         // Caret is at start of line so merge with previous line
         if (caret.from.charIndex === 0) {
-            const char_index = this.content.lengthOfLine(caret.from.lineIndex - 1)
+            const char_index = this.content[caret.from.lineIndex - 1].length
 
-            this.content = this.content.mergeLines(caret.from.lineIndex - 1, caret.from.lineIndex)
+            this.content = mergeLines(this.content, caret.from.lineIndex - 1, caret.from.lineIndex)
             
             this.render()
-            this.setCaret({ 
+
+            return { 
                 from: {
                     lineIndex: caret.from.lineIndex - 1,
                     charIndex: char_index
                 }
-            })
-
-            return
+            }
         }
 
         if (word) {
-            const startOfWord = this.content.startOfWord(caret.from)
+            const startOfWord = this.startOfWord(caret.from)
 
-            this.content = this.content.deleteRange(startOfWord, caret.from)
+            this.content = deleteRange(this.content, startOfWord, caret.from)
 
             this.render()
-            this.setCaret({ 
-                from: startOfWord
-            })
 
-            return
+            return { 
+                from: startOfWord
+            }
         }
 
         // Backward delete a single character
-        this.content = this.content.removeChars(caret.from.lineIndex, caret.from.charIndex - 1, caret.from.charIndex)
+        this.content = removeChars(this.content, caret.from.lineIndex, caret.from.charIndex - 1, caret.from.charIndex)
 
         this.render()
-        this.setCaret({
+        
+        return {
             from: {
                 charIndex: caret.from.charIndex - 1, 
                 lineIndex: caret.from.lineIndex,
             }
-        })
+        }
     }
 
-    deleteForward() {
+    deleteForward(): Caret {
         const caret = this.getCaret()
         if (!caret) throw new Error("NO_CARET")
 
         if (caret.to) {
-            this.content = this.content.deleteRange(caret.from, caret.to)
+            this.content = deleteRange(this.content, caret.from, caret.to)
 
             this.render()
-            this.setCaret({ 
+            
+            return { 
                 from: caret.from 
-            })
-
-            return
+            }
         }
 
         // Check for position at which a forward delete does nothing   
-        if (caret.from.charIndex === this.content.lengthOfLine(caret.from.lineIndex) && 
-            caret.from.lineIndex === this.content.lineCount() - 1) {
-            return
+        if (caret.from.charIndex === this.content[caret.from.lineIndex].length && 
+            caret.from.lineIndex === this.content.length - 1) {
+            return caret
         }
 
         // Caret it at end of line so merge with following line
-        if (caret.from.charIndex === this.content.lengthOfLine(caret.from.lineIndex)) {
-            this.content = this.content.mergeLines(caret.from.lineIndex, caret.from.lineIndex + 1)
+        if (caret.from.charIndex === this.content[caret.from.lineIndex].length) {
+            this.content = mergeLines(this.content, caret.from.lineIndex, caret.from.lineIndex + 1)
             
             this.render()
-            this.setCaret({ 
-                from: caret.from
-            })
 
-            return
+            return { 
+                from: caret.from
+            }
         }
 
         // Forward delete a single char
-        this.content = this.content.removeChars(caret.from.lineIndex, caret.from.charIndex, caret.from.charIndex + 1)
+        this.content = removeChars(this.content, caret.from.lineIndex, caret.from.charIndex, caret.from.charIndex + 1)
 
         this.render()
-        this.setCaret({
+
+        return {
             from: caret.from
-        })
+        }
     }
 
 }

@@ -36,6 +36,7 @@ fn token_to_string(token: Token) -> String {
         Token::While => "while".to_string(),
         Token::Func => "func".to_string(),
         Token::Return => "return".to_string(),
+        Token::Break => "break".to_string(),
         Token::Forward => "forward".to_string(),
         Token::Left => "left".to_string(),
         Token::Right => "right".to_string(),
@@ -49,6 +50,8 @@ fn token_to_string(token: Token) -> String {
         Token::Number(num) => num.to_string(),
         Token::Eof => "".to_string(),
         Token::Undefined(str) => str.to_string(),
+        Token::True => "true".to_string(),
+        Token::False => "false".to_string(),
         token => unreachable!("uexpected token: \"{:?}\"", token)
     }
 }

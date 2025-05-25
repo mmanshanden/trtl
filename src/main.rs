@@ -1,12 +1,13 @@
 use core::str;
 use std::{fs::File, io::Read};
 
+use lang::{parse_program, Lexer, Run};
+
 
 // use minifb::{Window, WindowOptions};
 
 pub mod lang;
 pub mod machine;
-pub mod wasm;
 
 fn stdout(s: &str) {
     println!("{}", s);
@@ -32,16 +33,12 @@ fn main() {
         }
     };
 
-    let r = wasm::highlight(&code);
 
-    // let mut lexer = Lexer::new(&code);
-    // let tokens = lexer.tokens();
-    // let run = Run::new(&tokens);
-    // let deny = Deny::new();
+    let mut lexer = Lexer::new(&code);
+    let tokens = lexer.tokens();
+    let run = Run::new(&tokens);
 
-    // let p = parse_program();
-
-    // let r = p.parse(run, deny);
+    let r = parse_program(run);
 
     println!("Parse result: {:?}", r);
 

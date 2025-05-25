@@ -66,5 +66,15 @@ export const shapes = {
         "  i = i + 1;",
         "}",
         ""
+    ],
+    "emoji_test": [
+        "cow🤠boy = 200;",
+        "forward cow🤠boy;",
+        "right 90;",
+        "forward cow🤠boy;",
+        "right 90;",
+        "forward cow🤠boy;",
+        "right 90;",
+        "forward cow🤠boy;",
     ]
 }
