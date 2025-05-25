@@ -1,11 +1,8 @@
 import './style.css'
-import { Editor } from './editor/editor';
 import { loadModule } from './wasm/wasm';
-import { EventBus } from './editor/bus';
 import { shapes } from './shapes';
-import { Editor2 } from './editor/editor2';
+import { Editor } from './editor/editor';
 
-const bus = new EventBus()
 
 const loadRenderer = (): Promise<Worker> => {
     return new Promise(resolve => {
@@ -35,7 +32,7 @@ const init = async () => {
     fixCanvasDimensions(canvasElement)
     
     if (module) {
-        const editor = new Editor2(editorElement, module)
+        const editor = new Editor(editorElement, module)
 
         editor.addEventListener('render', () => {
             renderer.postMessage({

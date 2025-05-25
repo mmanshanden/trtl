@@ -1,4 +1,4 @@
-import { Caret } from "./editor";
+import { Caret } from "./editor"
 
 interface State {
     caret: Caret | null
