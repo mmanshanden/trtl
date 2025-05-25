@@ -1,4 +1,4 @@
-use super::{ast::{Entry, Expr, Program, Stmt}, lex::Token, run::{Contains, Run, Tag, Tags, Tokens}};
+use super::{ast::{Entry, Expr, Program, Stmt}, lex::Token, run::{Contains, Run, Marker, Echo, Tokens}};
 
 pub type Deny<'a> = Vec<Token<'a>>;
 
@@ -12,7 +12,7 @@ impl<'a> Contains<'a> for Deny<'a> {
 
 #[derive(Debug, Clone)]
 pub enum ParseResult<'a, T> {
-    Success(T, Tags<'a>, Run<'a>),
+    Success(T, Echo<'a>, Run<'a>),
     Error,
 }
 
@@ -31,7 +31,7 @@ impl<'a, T> ParseResult<'a, T> {
         }
     }
 
-    pub fn unwrap(self) -> (T, Tags<'a>, Run<'a>) {
+    pub fn unwrap(self) -> (T, Echo<'a>, Run<'a>) {
         match self {
             Self::Success(value, fragments, run) => (value, fragments, run),
             Self::Error => panic!("Called `unwrap` on an `Error` value"),
@@ -133,11 +133,11 @@ where
 }
 
 
-fn expect<'a, U>(expect: Token<'static>, detoken: U) -> impl Parser<'a, ()>
+fn expect<'a, U>(expect: Token<'static>, echo: U) -> impl Parser<'a, ()>
 where
-    U: Fn(Token<'a>) -> Tag<'a>,
+    U: Fn(Token<'a>) -> Marker<'a>,
 {
-    let parser = expect_pred(move |&t| t == expect, detoken);
+    let parser = expect_pred(move |&t| t == expect, echo);
 
     move |run: Run<'a>, deny: Deny<'a>| {
         match parser.parse(run, deny) {
@@ -147,21 +147,21 @@ where
     }
 }
 
-fn output_whitespace_or_unexpected_token<'a, F>(tokens: Tokens<'a>, token: Token<'a>, detoken: F) -> Vec<Tag<'a>>
+fn output_whitespace_or_unexpected_token<'a, F>(tokens: Tokens<'a>, token: Token<'a>, echo: F) -> Vec<Marker<'a>>
 where
-    F: Fn(Token<'a>) -> Tag<'a>
+    F: Fn(Token<'a>) -> Marker<'a>
 {
     if tokens.is_empty() {
-        return vec![detoken(token)];
+        return vec![echo(token)];
     }
 
     let mut output = Vec::new();
 
     for (i, t) in tokens.iter().enumerate() {
         let tag = match t {
-            Token::Whitespace(str) => Some(Tag::Whitespace(str)),
-            Token::Comment(str) => Some(Tag::Comment(str)),
-            Token::LineBreak => Some(Tag::LineBreak),
+            Token::Whitespace(str) => Some(Marker::Whitespace(str)),
+            Token::Comment(str) => Some(Marker::Comment(str)),
+            Token::LineBreak => Some(Marker::LineBreak),
             _ => None
         };
 
@@ -170,7 +170,7 @@ where
         }
 
         if i > 0 {
-            output.push(Tag::UnexpectedToken {
+            output.push(Marker::UnexpectedToken {
                 expected: token,
                 actual: &tokens[..i],
             });
@@ -180,23 +180,23 @@ where
 
         return [
             output, 
-            output_whitespace_or_unexpected_token(&tokens[i + 1..], token, detoken)
+            output_whitespace_or_unexpected_token(&tokens[i + 1..], token, echo)
         ].concat();
     }
 
-    output.push(Tag::UnexpectedToken {
+    output.push(Marker::UnexpectedToken {
         expected: token,
         actual: tokens,
     });
 
-    output.push(detoken(token));
+    output.push(echo(token));
 
     output
 }
 
-fn expect_pred<'a, U>(pred: impl Fn(&'a Token<'a>) -> bool, detoken: U) -> impl Parser<'a, Token<'a>>
+fn expect_pred<'a, U>(pred: impl Fn(&'a Token<'a>) -> bool, echo: U) -> impl Parser<'a, Token<'a>>
 where
-    U: Fn(Token<'a>) -> Tag<'a>,
+    U: Fn(Token<'a>) -> Marker<'a>,
 {
     move |run: Run<'a>, deny: Deny<'a>| {
         let (_, tokens, token, run) = match run.first_where(&pred, deny) {
@@ -204,16 +204,16 @@ where
             Some(result) => result,
         };
 
-        let tags = output_whitespace_or_unexpected_token(tokens, token, &detoken);
+        let tags = output_whitespace_or_unexpected_token(tokens, token, &echo);
 
         ParseResult::Success(token, tags, run)
     }
 }
 
 
-fn expect_next<'a, U>(expect: Token<'static>, detoken: U) -> impl Parser<'a, ()>
+fn expect_next<'a, U>(expect: Token<'static>, echo: U) -> impl Parser<'a, ()>
 where
-    U: Fn(Token<'a>) -> Tag<'a>
+    U: Fn(Token<'a>) -> Marker<'a>
 {
     move |run: Run<'a>, _: Deny<'a>| {
         let next = run.next(|t: &Token| t.dist() > 0);
@@ -228,17 +228,17 @@ where
             return ParseResult::Error;
         }
 
-        let tags = output_whitespace_or_unexpected_token(tokens, token, &detoken);
+        let tags = output_whitespace_or_unexpected_token(tokens, token, &echo);
 
         ParseResult::Success((), tags, run)
     }
 }
 
-fn expect_some<'a, F, U, T>(expect: F, detoken: U) -> impl Parser<'a, T>
+fn expect_some<'a, F, U, T>(expect: F, echo: U) -> impl Parser<'a, T>
 where
     T: Copy,
     F: Fn(&'a Token<'a>) -> Option<T>,
-    U: Fn(T, Token<'a>) -> Tag<'a>,
+    U: Fn(T, Token<'a>) -> Marker<'a>,
 {
     move |run: Run<'a>, deny: Deny<'a>| {
         let next = run.first_where_some(&expect, deny);
@@ -249,7 +249,7 @@ where
 
         let (_, val, tokens, token, run) = next.unwrap();
 
-        let tags = output_whitespace_or_unexpected_token(tokens, token, |token| detoken(val, token));
+        let tags = output_whitespace_or_unexpected_token(tokens, token, |token| echo(val, token));
 
         ParseResult::Success(val, tags, run)
     }
@@ -396,20 +396,20 @@ where
 
 fn wrapped<'a, T>(before: Token<'static>, after: Token<'static>, body: impl Parser<'a, T>) -> impl Parser<'a, T> {
     second(
-        expect(before, Tag::Plain),
+        expect(before, Marker::Plain),
         first(
             body.deny(after),
-            expect(after, Tag::Plain),
+            expect(after, Marker::Plain),
         ),
     )
 }
 
 fn wrapped_attached<'a, T>(before: Token<'static>, after: Token<'static>, body: impl Parser<'a, T>) -> impl Parser<'a, T> {
     second(
-        expect_next(before, Tag::Plain),
+        expect_next(before, Marker::Plain),
         first(
             body.deny(after),
-            expect(after, Tag::Plain),
+            expect(after, Marker::Plain),
         ),
     )
 }
@@ -434,7 +434,7 @@ fn seperated_by<'a, T>(parser: impl Parser<'a, T>, separator: Token<'static>) ->
 
         loop {
             // parse the separator
-            match expect(separator, Tag::Plain).parse(run.clone(), deny.clone()) {
+            match expect(separator, Marker::Plain).parse(run.clone(), deny.clone()) {
                 ParseResult::Error => { 
                     break;
                 },
@@ -463,7 +463,7 @@ fn seperated_by<'a, T>(parser: impl Parser<'a, T>, separator: Token<'static>) ->
 
 pub fn parse_expr_primary<'a>() -> impl Parser<'a, Expr> {
     let number_parser = |run: Run<'a>, deny: Deny<'a>| {
-        expect_some(Token::number, |number, _| Tag::Number(number)).map(|number| {
+        expect_some(Token::number, |number, _| Marker::Number(number)).map(|number| {
             let number = number.parse().unwrap();
             Expr::Num(number)
         }).parse(run, deny)
@@ -471,7 +471,7 @@ pub fn parse_expr_primary<'a>() -> impl Parser<'a, Expr> {
 
     let func_call_parser = |run: Run<'a>, deny: Deny<'a>| {
         combine(
-            expect_some(Token::identifier, |id, _| Tag::Call(id)),
+            expect_some(Token::identifier, |id, _| Marker::Call(id)),
             wrapped_attached(
                 Token::LeftParen,
                 Token::RightParen,
@@ -487,7 +487,7 @@ pub fn parse_expr_primary<'a>() -> impl Parser<'a, Expr> {
     let identifier_parser = |run: Run<'a>, deny: Deny<'a>| {
         expect_some(
             Token::identifier,
-            |id, _| Tag::Identifier(id)
+            |id, _| Marker::Identifier(id)
         ).map(|id| {
             let id = id.to_string();
             Expr::Var(id)
@@ -530,7 +530,7 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
 
         let lhs_is_var = matches!(lhs, Expr::Var(_));
 
-        let is_operation = |&token| match token {
+        let some_operation = |&token| match token {
             Token::Assign if lhs_is_var => Some((Token::Assign, 0, Associativity::Left)),
             Token::Equals => Some((Token::Equals, 1, Associativity::Left)),
             Token::NotEqual => Some((Token::NotEqual, 1, Associativity::Left)),
@@ -549,14 +549,17 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
             let inner_run = run.clone();
             let inner_deny = deny.clone();
 
-            let (op, prec, assoc) = match expect_some(is_operation, |_, token| Tag::Plain(token)).parse(inner_run, inner_deny) {
+            let (op, prec, assoc, mut ts, next) = match expect_some(some_operation, |_, token| Marker::Plain(token)).parse(inner_run, inner_deny) {
+                ParseResult::Success((op, prec, assoc), ts, next) => (op, prec, assoc, ts, next),
                 ParseResult::Error => break,
-                ParseResult::Success(some, mut fs, next) => {
-                    tags.append(&mut fs);
-                    run = next;
-                    some
-                }
             };
+
+            if prec < min_prec {
+                break;
+            }
+
+            tags.append(&mut ts);
+            run = next;
 
             let new_min_prec = if assoc == Associativity::Left {
                 prec + 1
@@ -565,7 +568,7 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
             };
 
             let rhs = match parse_expr_1(new_min_prec).parse(run.clone(), deny.clone()) {
-                ParseResult::Error => return ParseResult::Error,
+                ParseResult::Error => break,
                 ParseResult::Success(rhs, mut fs, next) => {
                     tags.append(&mut fs);
                     run = next;
@@ -588,7 +591,7 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
                 Token::Minus => Expr::Sub(lhs_boxxed, rhs_boxxed),
                 Token::Multiply => Expr::Mul(lhs_boxxed, rhs_boxxed),
                 Token::Divide => Expr::Div(lhs_boxxed, rhs_boxxed),
-                _ => unreachable!(),
+                _ => unreachable!("Token is not an operator"),
             };
         }
 
@@ -611,16 +614,16 @@ fn parse_stmt_block<'a>() -> impl Parser<'a, Stmt> {
 fn parse_stmt_expr<'a>() -> impl Parser<'a, Stmt> {
     first(
         parse_expr().deny(Token::SemiColon).map(Stmt::Expr),
-        expect(Token::SemiColon, Tag::Plain)
+        expect(Token::SemiColon, Marker::Plain)
     )
 }
 
 pub fn parse_stmt_move<'a>() -> impl Parser<'a, Stmt> {
     combine(
-        expect_pred(|&t| matches!(t, Token::Forward | Token::Left | Token::Right), Tag::Move),
+        expect_pred(|&t| matches!(t, Token::Forward | Token::Left | Token::Right), Marker::Move),
         first(
             parse_expr().deny(Token::SemiColon),
-            expect(Token::SemiColon, Tag::Plain),
+            expect(Token::SemiColon, Marker::Plain),
         ),
         |stmt, expr| match stmt {
             Token::Forward => Stmt::Forward(expr),
@@ -633,7 +636,7 @@ pub fn parse_stmt_move<'a>() -> impl Parser<'a, Stmt> {
 
 pub fn parse_stmt_if<'a>() -> impl Parser<'a, Stmt> {
     let parse_if = second(
-        expect(Token::If, Tag::Keyword),
+        expect(Token::If, Marker::Keyword),
         combine(
             parse_expr().deny(Token::LeftBrace),
             parse_stmt_block().deny(Token::Else),
@@ -650,7 +653,7 @@ pub fn parse_stmt_if<'a>() -> impl Parser<'a, Stmt> {
             Some(result) => result,
         };
 
-        let tags = output_whitespace_or_unexpected_token(tokens, Token::Else, Tag::Keyword);
+        let tags = output_whitespace_or_unexpected_token(tokens, Token::Else, Marker::Keyword);
 
         match parse_stmt_block().parse(next, deny) {
             ParseResult::Error => ParseResult::Error,
@@ -675,7 +678,7 @@ pub fn parse_stmt_if<'a>() -> impl Parser<'a, Stmt> {
 
 fn parse_stmt_while<'a>() -> impl Parser<'a, Stmt> {
     second(
-        expect(Token::While, Tag::Keyword),
+        expect(Token::While, Marker::Keyword),
         combine(
             parse_expr().deny(Token::LeftBrace),
             parse_stmt_block().map(Box::new),
@@ -708,11 +711,11 @@ fn parse_stmt<'a>() -> impl Parser<'a, Stmt> {
     let return_parser = |run: Run<'a>, deny: Deny<'a>| {
         first(
             combine(
-                expect(Token::Return, Tag::Keyword),
+                expect(Token::Return, Marker::Keyword),
                 parse_expr().optional(),
                 |_, expr| Stmt::Return(expr)
             ),
-            expect(Token::SemiColon, Tag::Plain)
+            expect(Token::SemiColon, Marker::Plain)
         ).parse(run, deny)
     };
 
@@ -731,17 +734,17 @@ pub fn parse_func<'a>() -> impl Parser<'a, Entry> {
         Token::LeftParen, 
         Token::RightParen,
         seperated_by(
-            expect_some(Token::identifier, |id, _| Tag::Identifier(id)),
+            expect_some(Token::identifier, |id, _| Marker::Identifier(id)),
             Token::Comma
         )
     );
 
     let header_parser = combine(
-        expect(Token::Func, Tag::Keyword),
+        expect(Token::Func, Marker::Keyword),
         combine(
             expect_some(
                 Token::identifier,
-                |id, _| Tag::Identifier(id)
+                |id, _| Marker::Identifier(id)
             ),
             params_parser,
             |name, params| (name, params)
@@ -776,6 +779,6 @@ pub fn parse_program<'a>() -> impl Parser<'a, Program> {
                 parse_func,
             ]),
         ),
-        expect(Token::Eof, Tag::Plain),
+        expect(Token::Eof, Marker::Plain),
     )
 }

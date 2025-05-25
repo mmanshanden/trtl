@@ -1,4 +1,4 @@
-use crate::lang::{parse_program, Lexer, Run, Tag, Token};
+use crate::lang::{parse_program, Lexer, Run, Marker, Token};
 
 
 #[derive(Debug, Clone)]
@@ -70,61 +70,61 @@ pub fn highlight(input: &str) -> Highlight {
 
     for tag in tags {
         match tag {
-            Tag::LineBreak => {
+            Marker::LineBreak => {
                 lines.push(line);
                 line = Vec::new();
             },
 
-            Tag::Whitespace(str) => {
+            Marker::Whitespace(str) => {
                 line.push(Fragment {
                     value: str.to_string(),
                     kind: 0,
                     hint: 0
                 });
             },
-            Tag::Plain(token) => {
+            Marker::Plain(token) => {
                 line.push(Fragment {
                     value: token_to_string(token),
                     kind: 0,
                     hint: 0
                 });
             },
-            Tag::Comment(str) => {
+            Marker::Comment(str) => {
                 line.push(Fragment {
                     value: str.to_string(),
                     kind: 1,
                     hint: 0
                 });
             },
-            Tag::Call(name) => {
+            Marker::Call(name) => {
                 line.push(Fragment {
                     value: name.to_string(),
                     kind: 2,
                     hint: 0
                 });
             },
-            Tag::Move(token) => {
+            Marker::Move(token) => {
                 line.push(Fragment {
                     value: token_to_string(token),
                     kind: 3,
                     hint: 0
                 });
             },
-            Tag::Identifier(name) => {
+            Marker::Identifier(name) => {
                 line.push(Fragment {
                     value: name.to_string(),
                     kind: 4,
                     hint: 0
                 });
             },
-            Tag::Number(num) => {
+            Marker::Number(num) => {
                 line.push(Fragment {
                     value: num   .to_string(),
                     kind: 5,
                     hint: 0
                 });
             },
-            Tag::Keyword(token) => {
+            Marker::Keyword(token) => {
                 line.push(Fragment {
                     value: token_to_string(token),
                     kind: 6,
@@ -132,7 +132,7 @@ pub fn highlight(input: &str) -> Highlight {
                 });
             },
 
-            Tag::UnexpectedToken { expected: _, actual } => for &token in actual {
+            Marker::UnexpectedToken { expected: _, actual } => for &token in actual {
                 line.push(Fragment {
                     value: token_to_string(token),
                     kind: 20,

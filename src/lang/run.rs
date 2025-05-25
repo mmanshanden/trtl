@@ -5,7 +5,7 @@ pub type Tokens<'a> = &'a [Token<'a>];
 
 
 #[derive(Debug, Clone)]
-pub enum Tag<'a> {
+pub enum Marker<'a> {
     Number(&'a str),
     Identifier(&'a str),
     Call(&'a str),
@@ -22,7 +22,7 @@ pub enum Tag<'a> {
     }
 }
 
-pub type Tags<'a> = Vec<Tag<'a>>;
+pub type Echo<'a> = Vec<Marker<'a>>;
 
 pub trait Contains<'a> {
     fn contains(&self, token: &'a Token<'a>) -> bool;

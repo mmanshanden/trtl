@@ -6,13 +6,13 @@ mod compile;
 
 pub use ast::*;
 pub use lex::{Lexer, Token};
-pub use run::{Run, Tag, Tags};
+pub use run::{Run, Marker, Echo};
 pub use compile::{compile, CompileError};
 
 use parse::ParseResult;
 use parse::{Deny, Parser};
 
-pub fn parse_program<'a>(run: Run<'a>) -> Result<(Program, Tags<'a>), ()> {
+pub fn parse_program<'a>(run: Run<'a>) -> Result<(Program, Echo<'a>), ()> {
     let deny = Deny::new();
 
     let result = match parse::parse_program().parse(run, deny) {
