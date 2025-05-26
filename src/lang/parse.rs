@@ -687,46 +687,64 @@ fn parse_stmt_while<'a>() -> impl Parser<'a, Stmt> {
     )
 }
 
+fn parse_stmt_return<'a>() -> impl Parser<'a, Stmt> {
+    first(
+        combine(
+            expect(Token::Return, Marker::Keyword),
+            parse_expr().optional(),
+            |_, expr| Stmt::Return(expr)
+        ),
+        expect(Token::SemiColon, Marker::Plain)
+    )
+}
+
 fn parse_stmt<'a>() -> impl Parser<'a, Stmt> {
-    let block_parser = |run: Run<'a>, deny: Deny<'a>| {
-        parse_stmt_block().parse(run, deny)
+    let is_stmt_token = |token: &Token<'a>| match token {
+        Token::Number(_) => true,
+        Token::Identifier(_) => true,
+        Token::LeftParen => true,
+        Token::LeftBrace => true,
+        Token::If => true,
+        Token::While => true,
+        Token::Forward => true,
+        Token::Left => true,
+        Token::Right => true,
+        Token::Return => true,
+        _ => false,
     };
 
-    let expr_parser = |run: Run<'a>, deny: Deny<'a>| {
-        parse_stmt_expr().parse(run, deny)
-    };
+    move |run: Run<'a>, deny: Deny<'a>| {
+        let (tokens, token, next) = match run.find(is_stmt_token, deny.clone()) {
+            Some((_, tokens, token, run)) => (tokens, token, run),
+            None => return ParseResult::Error
+        };
 
-    let if_parser = |run: Run<'a>, deny: Deny<'a>| {
-        parse_stmt_if().parse(run, deny)
-    };
+        let parse_result = match token {
+            Token::Number(_) => parse_stmt_expr().parse(next, deny),
+            Token::Identifier(_) => parse_stmt_expr().parse(next, deny),
+            Token::LeftParen => parse_stmt_expr().parse(next, deny),
+            Token::LeftBrace => parse_stmt_block().parse(next, deny),
+            Token::If => parse_stmt_if().parse(next, deny),
+            Token::While => parse_stmt_while().parse(next, deny),
+            Token::Forward => parse_stmt_move().parse(next, deny),
+            Token::Left => parse_stmt_move().parse(next, deny),
+            Token::Right => parse_stmt_move().parse(next, deny),
+            Token::Return => parse_stmt_return().parse(next, deny),
+            _ => unreachable!()
+        };
 
-    let while_parser = |run: Run<'a>, deny: Deny<'a>| {
-        parse_stmt_while().parse(run, deny)
-    };
+        if parse_result.is_err() {
+            return ParseResult::Error;
+        }
 
-    let move_parser = |run: Run<'a>, deny: Deny<'a>| {
-        parse_stmt_move().parse(run, deny)
-    };
+        
+        let mut markers1 = output_whitespace_or_unexpected_token(tokens, token, Marker::Plain);
+        markers1.pop();
 
-    let return_parser = |run: Run<'a>, deny: Deny<'a>| {
-        first(
-            combine(
-                expect(Token::Return, Marker::Keyword),
-                parse_expr().optional(),
-                |_, expr| Stmt::Return(expr)
-            ),
-            expect(Token::SemiColon, Marker::Plain)
-        ).parse(run, deny)
-    };
+        let (value, markers2, next) = parse_result.unwrap();
 
-    choice(vec![
-        block_parser,
-        expr_parser,
-        if_parser,
-        while_parser,
-        move_parser,
-        return_parser
-    ])
+        return ParseResult::Success(value, vec![markers1, markers2].concat(), next);
+    }
 }
 
 pub fn parse_func<'a>() -> impl Parser<'a, Entry> {

@@ -84,6 +84,38 @@ impl<'a> Run<'a> {
         None
     }
 
+    pub fn find(
+        &self,
+        pred: impl Fn(&'a Token<'a>) -> bool,
+        deny: impl Contains<'a>
+    ) -> Option<(usize, Tokens<'a>, Token<'a>, Run<'a>)> {
+        let mut dist = 0;
+
+        for (idx, token) in self.input.iter().enumerate() {
+            if pred(token) {
+                let next = Run {
+                    dist: self.dist + dist,
+                    input: &self.input[idx..],
+                };
+
+                return Some((
+                    dist,
+                    &self.input[..idx],
+                    *token,
+                    next,
+                ));
+            }
+
+            if deny.contains(token) {
+                return None;
+            }
+
+            dist += token.dist();
+        }
+
+        None
+    }
+
     pub fn first_where(
         &self,
         pred: impl Fn(&'a Token<'a>) -> bool,
