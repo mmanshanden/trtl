@@ -46,7 +46,7 @@ onmessage = async (e) => {
     cpu?.destroy()
     cpu = new Cpu(module, input)
 
-    if (canvas == null || canvas.width != width && canvas.height != height) {
+    if (canvas == null || canvas.width != width || canvas.height != height) {
         canvas?.destroy()
         canvas = new Canvas(module, width, height)
         sprite = new ImageData(width, height)

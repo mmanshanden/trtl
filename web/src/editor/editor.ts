@@ -104,14 +104,17 @@ export class Editor extends EventTarget {
         let input_html = ""
     
         lines.forEach(({ fragments }, lineIndex) => {
-            gutter_html += `<span>${lineIndex + 1}</span>`
-
             if (fragments.length === 0) {
                 input_html += `<div class="ln"><br></div>`
+                gutter_html += `<span>${lineIndex + 1}</span>`
+
                 return
             }
 
             input_html += `<div class="ln">`
+
+            let contains_move = false;
+            let contains_error = false;
     
             fragments.forEach(({ value, kind, error, hint }) => {
                 if (kind || error || hint) {
@@ -121,6 +124,9 @@ export class Editor extends EventTarget {
                 } else {
                     input_html += `<span>${value}</span>`
                 }
+
+                contains_move = contains_move || kind === "move"
+                contains_error = contains_error || kind === "error"
             })
 
             if (fragments.length === 0) {
@@ -128,6 +134,15 @@ export class Editor extends EventTarget {
             }
     
             input_html += `</div>`
+
+            if (contains_error) {
+                gutter_html += `<span class="error">${lineIndex + 1}</span>`
+            } else if (contains_move) {
+                gutter_html += `<span class="move">${lineIndex + 1}</span>`
+            } else {
+                gutter_html += `<span>${lineIndex + 1}</span>`
+            }
+
         })
     
         this.gutter.innerHTML = gutter_html
@@ -329,9 +344,14 @@ export class Editor extends EventTarget {
             // the stack
 
             if (node.nodeType === Node.ELEMENT_NODE) {
+                const element = node as Element
+                element.scrollIntoView()
+
                 stack.unshift(...node.childNodes)
                 continue
             }
+
+            // At this point the node must be a TEXT_NODE
 
             const length = elementLength(node)
 

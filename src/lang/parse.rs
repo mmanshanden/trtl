@@ -762,7 +762,7 @@ pub fn parse_func<'a>() -> impl Parser<'a, Entry> {
         combine(
             expect_some(
                 Token::identifier,
-                |id, _| Marker::Identifier(id)
+                |id, _| Marker::Function(id)
             ),
             params_parser,
             |name, params| (name, params)

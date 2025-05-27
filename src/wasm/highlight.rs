@@ -73,69 +73,76 @@ pub fn highlight(input: &str) -> Highlight {
             Marker::LineBreak => {
                 lines.push(line);
                 line = Vec::new();
-            },
+            }
 
-            Marker::Whitespace(str) => {
+            Marker::Number(str) => {
                 line.push(Fragment {
                     value: str.to_string(),
-                    kind: 0,
-                    hint: 0
+                    kind: 1,
+                    hint: 0,
                 });
-            },
+            }
+            Marker::Identifier(str) => {
+                line.push(Fragment {
+                    value: str.to_string(),
+                    kind: 2,
+                    hint: 0,
+                });
+            }
+            Marker::Function(str) => {
+                line.push(Fragment {
+                    value: str.to_string(),
+                    kind: 10,
+                    hint: 0,
+                });
+            }
+            Marker::Call(str) => {
+                line.push(Fragment {
+                    value: str.to_string(),
+                    kind: 11,
+                    hint: 0,
+                });
+            }
+            Marker::Keyword(token) => {
+                line.push(Fragment {
+                    value: token_to_string(token),
+                    kind: 3,
+                    hint: 0,
+                });
+            }
             Marker::Plain(token) => {
                 line.push(Fragment {
                     value: token_to_string(token),
                     kind: 0,
-                    hint: 0
+                    hint: 0,
                 });
-            },
-            Marker::Comment(str) => {
-                line.push(Fragment {
-                    value: str.to_string(),
-                    kind: 1,
-                    hint: 0
-                });
-            },
-            Marker::Call(name) => {
-                line.push(Fragment {
-                    value: name.to_string(),
-                    kind: 2,
-                    hint: 0
-                });
-            },
+            }
             Marker::Move(token) => {
                 line.push(Fragment {
                     value: token_to_string(token),
-                    kind: 3,
-                    hint: 0
-                });
-            },
-            Marker::Identifier(name) => {
-                line.push(Fragment {
-                    value: name.to_string(),
                     kind: 4,
-                    hint: 0
+                    hint: 0,
                 });
-            },
-            Marker::Number(num) => {
+            }
+            Marker::Comment(str) => {
                 line.push(Fragment {
-                    value: num   .to_string(),
-                    kind: 5,
-                    hint: 0
+                    value: str.to_string(),
+                    kind: 20,
+                    hint: 0,
                 });
-            },
-            Marker::Keyword(token) => {
+            }
+            Marker::Whitespace(str) => {
                 line.push(Fragment {
-                    value: token_to_string(token),
-                    kind: 6,
-                    hint: 0
+                    value: str.to_string(),
+                    kind: 0,
+                    hint: 0,
                 });
-            },
+            }
 
             Marker::UnexpectedToken { expected: _, actual } => for &token in actual {
                 line.push(Fragment {
                     value: token_to_string(token),
-                    kind: 20,
+                    kind: 40,
                     hint: 0
                 });
             }

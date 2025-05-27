@@ -8,6 +8,7 @@ pub type Tokens<'a> = &'a [Token<'a>];
 pub enum Marker<'a> {
     Number(&'a str),
     Identifier(&'a str),
+    Function(&'a str),
     Call(&'a str),
     Keyword(Token<'a>),
     Plain(Token<'a>),

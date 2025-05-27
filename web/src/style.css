@@ -125,19 +125,34 @@ html, body {
   line-height: 1.18rem;
   
   .gutter {
+    min-width: 3rem;
     min-height: 100%;
     height: fit-content;
 
-    padding: 0.4rem 0;
+    padding: 0.4rem 0.4rem 0;
     
     background-color: rgba(0, 0, 0, 0.1);
     text-align: right;
     font-size: 0.85rem;;
 
     span {
+      width: 100%;
       display: block;
-      padding: 0 0.4rem 0 1.2rem;
     };
+
+    span.error::before {
+      content: "•";
+      display: inline-block;
+      padding-right: 1.4rem;
+      color: red;
+    }
+
+    span.move::before {
+      content: "•";
+      display: inline-block;
+      padding-right: 1.4rem;
+      color: rgb(7, 86, 100);
+    }
   }
 
   .input {
@@ -157,20 +172,27 @@ html, body {
     }
 
     .func {
-      color: blue;
+      font-weight: bold;
+      color: rgb(72, 61, 139);
+    }
+
+    .call {
+      font-weight: bold;
+      color: rgb(72, 61, 139);;
+      font-style: italic;
     }
 
     .identifier {
-
+      font-weight: bold;
+      color: rgb(53, 53, 53)
     }
 
-    .instruction {
-      color: rgb(65, 0, 65);
-      font-weight: bold;
+    .move {
+      color: rgb(7, 86, 100);
     }
 
     .number {
-      color: darkolivegreen;
+      color: rgb(85, 107, 47);
     }
 
     .error {

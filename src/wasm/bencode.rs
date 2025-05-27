@@ -1,6 +1,4 @@
 
-use std::vec;
-
 use super::highlight::{Fragment, Highlight, Line};
 
 fn bencode_str(out: &mut Vec<u8>, bytes: &[u8]) {

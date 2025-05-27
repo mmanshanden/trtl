@@ -1,7 +1,7 @@
 import { decode } from "../wasm/benocde"
 import { WasmModule, readReturnBytesFromModule, writeBytesToModule } from "../wasm/wasm"
 
-type Style = 'keyword' | 'flow' |  'identifier' | 'number' | 'constant' | 'func' | 'instruction' | 'comment' | 'error'
+type Style = 'keyword' | 'flow' |  'identifier' | 'number' | 'constant' | 'func' | 'move' | 'comment' | 'error' | 'call'
 type Error = 'insert' | 'remove' | 'lint'
 
 interface Fragment {
@@ -12,23 +12,25 @@ interface Fragment {
 }
 
 interface Line {
-    fragments: Array<Fragment>
+    fragments: Fragment[]
 }
 
 const translate_kind = (kind: number): Style | undefined => {
     if (kind === 1) {
-        return 'comment'
-    } else if (kind === 2) {
-        return 'func'
-    } else if (kind === 3) {
-        return 'instruction'
-    } else if (kind === 4) {
-        return 'identifier'  
-    } else if (kind === 5) {
         return 'number'
-    } else if (kind === 6) {
+    } else if (kind === 2) {
+        return 'identifier'
+    } else if (kind === 3) {
         return 'keyword'
+    } else if (kind === 4) {
+        return 'move'  
+    } else if (kind === 10) {
+        return 'func'
+    } else if (kind === 11) {
+        return 'call'
     } else if (kind === 20) {
+        return 'comment'
+    } else if (kind === 40) {
         return 'error'
     } else {
         return undefined
@@ -61,6 +63,8 @@ export const highlight = (module: WasmModule, input: string): Line[] => {
                 let kind = fragment[0]
                 let hint = fragment[1]
                 let utf8 = fragment.subarray(2, fragment.length)
+
+                console.log(kind)
 
                 return {
                     value: decoder.decode(utf8),

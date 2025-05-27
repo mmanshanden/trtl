@@ -34,6 +34,14 @@ impl Canvas {
         self.height = new_height;
     }
 
+    pub fn width(&self) -> i32 {
+        self.width
+    }
+
+    pub fn height(&self) -> i32 {
+        self.height
+    }
+
     pub fn clear(&mut self) {
         for i in 0..self.pixels.len() {
             self.pixels[i] = 255;
