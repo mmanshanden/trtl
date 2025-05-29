@@ -66,12 +66,17 @@ export class Editor extends EventTarget {
         })
 
         this.input.addEventListener('keydown', (e) => {
-            // qnd tab insert
             if (e.key === 'Tab') {
-                const idx = this.getCaret()?.from.charIndex ?? 0
-                const tab = idx % 4 == 0 ? "    " : " ".repeat(idx % 4)
-                this.insertText(tab)
+                const caret = this.getCaret();
+                if (!caret) return;
+                
                 e.preventDefault()
+
+                const idx = caret.from.charIndex ?? 0
+                const tab = idx % 4 == 0 ? "    " : " ".repeat(idx % 4)
+
+                this.caret = this.insertText(tab)
+                this.setCaret(this.caret)
             }
         })
 
@@ -155,6 +160,8 @@ export class Editor extends EventTarget {
         switch (e.inputType) {
             case "deleteContentForward":
                 return this.deleteForward()
+            case "deleteWordForward":
+                return this.deleteForward(true)
             case "deleteByCut":
             case "deleteContentBackward":
                 return this.deleteBackward()
@@ -212,7 +219,6 @@ export class Editor extends EventTarget {
     private startOfWord(position: Position): Position {
         const line = this.content[position.lineIndex]
         const char = line.charAt(position.charIndex - 1)
-
         const isBoundary = /\s/.test(char) ? /\S/ : WORD_BOUNDARY
 
         for (let i = position.charIndex - 1; i >= 0; i--) {
@@ -226,6 +232,26 @@ export class Editor extends EventTarget {
 
         return {
             charIndex: 0,
+            lineIndex: position.lineIndex
+        }
+    }
+
+    private endOfWord(position: Position): Position {
+        const line = this.content[position.lineIndex]
+        const char = line.charAt(position.charIndex)
+        const isBoundary = /\s/.test(char) ? /\S/ : WORD_BOUNDARY
+
+        for (let i = position.charIndex; i <= line.length; i++) {
+            if (isBoundary.test(line[i])) {
+                return {
+                    charIndex: i === position.charIndex ? i + 1 : i,
+                    lineIndex: position.lineIndex
+                }
+            }
+        }
+
+        return {
+            charIndex: line.length - 1,
             lineIndex: position.lineIndex
         }
     }
@@ -471,7 +497,7 @@ export class Editor extends EventTarget {
         }
     }
 
-    deleteForward(): Caret {
+    deleteForward(word?: boolean): Caret {
         const caret = this.getCaret()
         if (!caret) throw new Error("NO_CARET")
 
@@ -495,6 +521,18 @@ export class Editor extends EventTarget {
         if (caret.from.charIndex === this.content[caret.from.lineIndex].length) {
             this.content = mergeLines(this.content, caret.from.lineIndex, caret.from.lineIndex + 1)
             
+            this.render()
+
+            return { 
+                from: caret.from
+            }
+        }
+
+        if (word) {
+            const endOfWord = this.endOfWord(caret.from)
+
+            this.content = deleteRange(this.content, caret.from, endOfWord)
+
             this.render()
 
             return { 

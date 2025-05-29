@@ -100,7 +100,6 @@ html, body {
   box-shadow: 0 0 0.1rem rgba(0, 0, 0, 0.2);
 }
 
-
 .baseline {
   display: flex;
   align-items: center;
@@ -172,22 +171,22 @@ html, body {
     }
 
     .func {
-      font-weight: bold;
-      color: rgb(72, 61, 139);
+      color: rgb(138, 90, 2);
     }
 
     .call {
-      font-weight: bold;
-      color: rgb(72, 61, 139);;
+      /* color: rgb(72, 61, 139); */
+      color: rgb(138, 90, 2);
       font-style: italic;
     }
 
     .identifier {
-      font-weight: bold;
-      color: rgb(53, 53, 53)
+      color: rgb(72, 61, 139);
+      /* color: rgb(53, 53, 53) */
     }
 
     .move {
+      font-weight: bold;
       color: rgb(7, 86, 100);
     }
 
@@ -198,6 +197,10 @@ html, body {
     .error {
       border-bottom: 2px dotted red;
       background-color: rgba(255, 0, 0, 0.05);
+    }
+
+    .flow {
+      color: rgb(75, 14, 75);
     }
   }
 }

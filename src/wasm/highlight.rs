@@ -74,7 +74,6 @@ pub fn highlight(input: &str) -> Highlight {
                 lines.push(line);
                 line = Vec::new();
             }
-
             Marker::Number(str) => {
                 line.push(Fragment {
                     value: str.to_string(),
@@ -86,6 +85,27 @@ pub fn highlight(input: &str) -> Highlight {
                 line.push(Fragment {
                     value: str.to_string(),
                     kind: 2,
+                    hint: 0,
+                });
+            }
+            Marker::Keyword(token) => {
+                line.push(Fragment {
+                    value: token_to_string(token),
+                    kind: 3,
+                    hint: 0,
+                });
+            }
+            Marker::Flow(token) => {
+                line.push(Fragment { 
+                    value: token_to_string(token), 
+                    kind: 4, 
+                    hint: 0 
+                });
+            }
+            Marker::Move(token) => {
+                line.push(Fragment {
+                    value: token_to_string(token),
+                    kind: 5,
                     hint: 0,
                 });
             }
@@ -103,24 +123,10 @@ pub fn highlight(input: &str) -> Highlight {
                     hint: 0,
                 });
             }
-            Marker::Keyword(token) => {
-                line.push(Fragment {
-                    value: token_to_string(token),
-                    kind: 3,
-                    hint: 0,
-                });
-            }
             Marker::Plain(token) => {
                 line.push(Fragment {
                     value: token_to_string(token),
                     kind: 0,
-                    hint: 0,
-                });
-            }
-            Marker::Move(token) => {
-                line.push(Fragment {
-                    value: token_to_string(token),
-                    kind: 4,
                     hint: 0,
                 });
             }
@@ -138,7 +144,6 @@ pub fn highlight(input: &str) -> Highlight {
                     hint: 0,
                 });
             }
-
             Marker::UnexpectedToken { expected: _, actual } => for &token in actual {
                 line.push(Fragment {
                     value: token_to_string(token),

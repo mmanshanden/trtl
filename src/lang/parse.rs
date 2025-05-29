@@ -697,7 +697,7 @@ fn parse_stmt_while<'a>() -> impl Parser<'a, Stmt> {
 fn parse_stmt_return<'a>() -> impl Parser<'a, Stmt> {
     first(
         combine(
-            expect(Token::Return, Marker::Keyword),
+            expect(Token::Return, Marker::Flow),
             parse_expr().optional(),
             |_, expr| Stmt::Return(expr)
         ),

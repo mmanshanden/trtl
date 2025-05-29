@@ -9,6 +9,7 @@ pub enum Marker<'a> {
     Number(&'a str),
     Identifier(&'a str),
     Function(&'a str),
+    Flow(Token<'a>),
     Call(&'a str),
     Keyword(Token<'a>),
     Plain(Token<'a>),

@@ -15,6 +15,88 @@ interface Line {
     fragments: Fragment[]
 }
 
+            // Marker::LineBreak => {
+            //     lines.push(line);
+            //     line = Vec::new();
+            // }
+            // Marker::Number(str) => {
+            //     line.push(Fragment {
+            //         value: str.to_string(),
+            //         kind: 1,
+            //         hint: 0,
+            //     });
+            // }
+            // Marker::Identifier(str) => {
+            //     line.push(Fragment {
+            //         value: str.to_string(),
+            //         kind: 2,
+            //         hint: 0,
+            //     });
+            // }
+            // Marker::Keyword(token) => {
+            //     line.push(Fragment {
+            //         value: token_to_string(token),
+            //         kind: 3,
+            //         hint: 0,
+            //     });
+            // }
+            // Marker::Control(token) => {
+            //     line.push(Fragment { 
+            //         value: token_to_string(token), 
+            //         kind: 4, 
+            //         hint: 0 
+            //     });
+            // }
+            // Marker::Move(token) => {
+            //     line.push(Fragment {
+            //         value: token_to_string(token),
+            //         kind: 5,
+            //         hint: 0,
+            //     });
+            // }
+            // Marker::Function(str) => {
+            //     line.push(Fragment {
+            //         value: str.to_string(),
+            //         kind: 10,
+            //         hint: 0,
+            //     });
+            // }
+            // Marker::Call(str) => {
+            //     line.push(Fragment {
+            //         value: str.to_string(),
+            //         kind: 11,
+            //         hint: 0,
+            //     });
+            // }
+            // Marker::Plain(token) => {
+            //     line.push(Fragment {
+            //         value: token_to_string(token),
+            //         kind: 0,
+            //         hint: 0,
+            //     });
+            // }
+            // Marker::Comment(str) => {
+            //     line.push(Fragment {
+            //         value: str.to_string(),
+            //         kind: 20,
+            //         hint: 0,
+            //     });
+            // }
+            // Marker::Whitespace(str) => {
+            //     line.push(Fragment {
+            //         value: str.to_string(),
+            //         kind: 0,
+            //         hint: 0,
+            //     });
+            // }
+            // Marker::UnexpectedToken { expected: _, actual } => for &token in actual {
+            //     line.push(Fragment {
+            //         value: token_to_string(token),
+            //         kind: 40,
+            //         hint: 0
+            //     });
+            // }
+
 const translate_kind = (kind: number): Style | undefined => {
     if (kind === 1) {
         return 'number'
@@ -23,6 +105,8 @@ const translate_kind = (kind: number): Style | undefined => {
     } else if (kind === 3) {
         return 'keyword'
     } else if (kind === 4) {
+        return 'flow'  
+    } else if (kind === 5) {
         return 'move'  
     } else if (kind === 10) {
         return 'func'
