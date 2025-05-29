@@ -38,12 +38,45 @@ where
     }
 }
 
+#[derive(Debug)]
+pub struct Span<'a> {
+    dist: usize,
+    tokens: Tokens<'a>,
+    next: Run<'a>
+}
+
+impl<'a> Span<'a> {
+    pub fn all(&self) -> Tokens<'a> {
+        self.tokens
+    }
+
+    pub fn tail(&self) -> Tokens<'a> {
+        &self.tokens[..self.tokens.len() - 1]
+    }
+
+    pub fn head(&self) -> Token<'a> {
+        self.tokens[self.tokens.len() - 1]
+    }
+
+    pub fn peek(&self) -> &'a Token<'a> {
+        self.next.input.get(0).unwrap_or(&Token::Eof)
+    }
+
+    pub fn next(self) -> Run<'a> {
+        self.next
+    }
+}
+
+pub enum Pass<'a, T> {
+    Some(T, Span<'a>),
+    None(Run<'a>)
+}
+
 #[derive(Clone, Debug)]
 pub struct Run<'a> {
     dist: usize,
     input: Tokens<'a>,
 }
-
 
 impl<'a> Run<'a> {
     pub fn new(input: Tokens<'a>) -> Self {
@@ -51,6 +84,20 @@ impl<'a> Run<'a> {
             dist: 0,
             input,
         }
+    }
+
+    fn pass<T>(self, dist: usize, value: T, offset: usize) -> Pass<'a, T> {
+        Pass::Some(
+            value, 
+            Span { 
+                dist: dist, 
+                tokens: &self.input[..offset], 
+                next: Run { 
+                    dist: self.dist + dist, 
+                    input: &self.input[offset..] 
+                } 
+            }
+        )
     }
 
     pub fn dist(&self) -> usize {
@@ -61,93 +108,63 @@ impl<'a> Run<'a> {
         self.input.len()
     }
 
-    pub fn next(&self, deny: impl Contains<'a>) -> Option<(usize, Tokens<'a>, Token<'a>, Run<'a>)> {
+    pub fn next_pass(self, deny: impl Contains<'a>) -> Pass<'a, ()> {
         let mut dist = 0;
 
         for (idx, token) in self.input.iter().enumerate() {
             if deny.contains(token) {
-                let next = Run {
-                    dist: self.dist + dist,
-                    input: &self.input[idx + 1..],
-                };
-
-                return Some((
-                    dist,
-                    &self.input[..idx],
-                    *token,
-                    next,
-                ));
+                return self.pass(dist, (), idx + 1);
             }
 
             dist += token.dist();
         }
 
-        None
+        Pass::None(self)
     }
 
-    pub fn find(
-        &self,
+    pub fn until_where(
+        self,
         pred: impl Fn(&'a Token<'a>) -> bool,
         deny: impl Contains<'a>
-    ) -> Option<(usize, Tokens<'a>, Token<'a>, Run<'a>)> {
+    ) -> Pass<'a, ()> {
         let mut dist = 0;
 
         for (idx, token) in self.input.iter().enumerate() {
             if pred(token) {
-                let next = Run {
-                    dist: self.dist + dist,
-                    input: &self.input[idx..],
-                };
-
-                return Some((
-                    dist,
-                    &self.input[..idx],
-                    *token,
-                    next,
-                ));
+                return self.pass(dist, (), idx);
             }
 
             if deny.contains(token) {
-                return None;
+                return Pass::None(self);
             }
 
             dist += token.dist();
         }
 
-        None
+        Pass::None(self)
     }
 
 
     pub fn first_where(
-        &self,
+        self,
         pred: impl Fn(&'a Token<'a>) -> bool,
         deny: impl Contains<'a>,
-    ) -> Option<(usize, Tokens<'a>, Token<'a>, Run<'a>)> {
+    ) -> Pass<'a, ()> {
         let mut dist = 0;
 
         for (idx, token) in self.input.iter().enumerate() {
             if pred(token) {
-                let next = Run {
-                    dist: self.dist + dist,
-                    input: &self.input[idx + 1..],
-                };
-
-                return Some((
-                    dist,
-                    &self.input[..idx],
-                    *token,
-                    next,
-                ));
+                return self.pass(dist, (), idx + 1);
             }
 
             if deny.contains(token) {
-                return None;
+                return Pass::None(self);
             }
 
             dist += token.dist();
         }
 
-        None
+        Pass::None(self)
     }
 
     /// Traverses the input until the given predicate returns a `Some` value. Tokens
@@ -168,36 +185,25 @@ impl<'a> Run<'a> {
     ///            
     /// A `None` is returned when the predicate never matches any input.
     pub fn first_where_some<T>(
-        &self,
+        self,
         pred: impl Fn(&'a Token<'a>) -> Option<T>,
         deny: impl Contains<'a>,
-    ) -> Option<(usize, T, Tokens<'a>, Token<'a>, Run<'a>)> {
+    ) -> Pass<'a, T> {
         let mut dist = 0;
 
         for (idx, token) in self.input.iter().enumerate() {
             if let Some(value) = pred(token) {
-                let next = Run {
-                    dist: self.dist + dist,
-                    input: &self.input[idx + 1..],
-                };
-
-                return Some((
-                    dist,
-                    value,
-                    &self.input[..idx],
-                    *token,
-                    next,
-                ));
+                return self.pass(dist, value, idx + 1);
             }
 
             if deny.contains(token) {
-                return None;
+                return Pass::None(self);
             }
 
             dist += token.dist();
         }
 
-        None
+        Pass::None(self)
     }
 }
 

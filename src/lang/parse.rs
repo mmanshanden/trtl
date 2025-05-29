@@ -1,4 +1,51 @@
-use super::{ast::{Entry, Expr, Program, Stmt}, lex::Token, run::{Contains, Run, Marker, Markers, Tokens}};
+use super::{ast::{Entry, Expr, Program, Stmt}, lex::Token, run::{Contains, Marker, Markers, Run, Tokens, Span, Pass}};
+
+fn mark_as_whitespace_or_unexpected_token<'a, F>(tokens: Tokens<'a>, token: Token<'a>, mark: F) -> Vec<Marker<'a>>
+where
+    F: Fn(Token<'a>) -> Marker<'a>
+{
+    if tokens.is_empty() {
+        return vec![mark(token)];
+    }
+
+    let mut output = Vec::new();
+
+    for (i, t) in tokens.iter().enumerate() {
+        let tag = match t {
+            Token::Whitespace(str) => Some(Marker::Whitespace(str)),
+            Token::Comment(str) => Some(Marker::Comment(str)),
+            Token::LineBreak => Some(Marker::LineBreak),
+            _ => None
+        };
+
+        if tag.is_none() {
+            continue;
+        }
+
+        if i > 0 {
+            output.push(Marker::UnexpectedToken {
+                expected: token,
+                actual: &tokens[..i],
+            });
+        }
+
+        output.push(tag.unwrap());
+
+        return [
+            output, 
+            mark_as_whitespace_or_unexpected_token(&tokens[i + 1..], token, mark)
+        ].concat();
+    }
+
+    output.push(Marker::UnexpectedToken {
+        expected: token,
+        actual: tokens,
+    });
+
+    output.push(mark(token));
+
+    output
+}
 
 pub type Deny<'a> = Vec<Token<'a>>;
 
@@ -69,12 +116,12 @@ pub trait Parser<'a, T> {
         Self: Sized 
     {
         move |run: Run<'a>, deny: Deny<'a>| {
-            let (value, tags, run) = match self.parse(run, deny) {
-                ParseResult::Success(value, tags, run) => (value, tags, run),
+            let (value, markers, run) = match self.parse(run, deny) {
+                ParseResult::Success(value, markers, run) => (value, markers, run),
                 ParseResult::Error => return ParseResult::Error,
             };
 
-            ParseResult::Success(map(value), tags, run)
+            ParseResult::Success(map(value), markers, run)
         }
     }
 
@@ -84,7 +131,7 @@ pub trait Parser<'a, T> {
     {
         move |run: Run<'a>, deny: Deny<'a>| {
             match self.parse(run.clone(), deny) {
-                ParseResult::Success(value, tags, run) => ParseResult::Success(Some(value), tags, run),
+                ParseResult::Success(value, markers, run) => ParseResult::Success(Some(value), markers, run),
                 ParseResult::Error => ParseResult::Success(None, vec![], run)
             }
         }
@@ -115,9 +162,9 @@ pub trait Parser<'a, T> {
                 println!("\t[{}] [ERR]", name);
                 result
             } else {
-                let (value, tags, run) = result.unwrap();
+                let (value, markers, run) = result.unwrap();
                 println!("\t[{}] [OK] {:?}", name, run);
-                ParseResult::Success(value, tags, run)
+                ParseResult::Success(value, markers, run)
             }
         }
     }
@@ -141,72 +188,30 @@ where
 
     move |run: Run<'a>, deny: Deny<'a>| {
         match parser.parse(run, deny) {
-            ParseResult::Success(_, tags, run) => ParseResult::Success((), tags, run),
+            ParseResult::Success(_, markers, run) => ParseResult::Success((), markers, run),
             ParseResult::Error => ParseResult::Error,
         }
     }
 }
 
-fn output_whitespace_or_unexpected_token<'a, F>(tokens: Tokens<'a>, token: Token<'a>, mark: F) -> Vec<Marker<'a>>
-where
-    F: Fn(Token<'a>) -> Marker<'a>
-{
-    if tokens.is_empty() {
-        return vec![mark(token)];
-    }
-
-    let mut output = Vec::new();
-
-    for (i, t) in tokens.iter().enumerate() {
-        let tag = match t {
-            Token::Whitespace(str) => Some(Marker::Whitespace(str)),
-            Token::Comment(str) => Some(Marker::Comment(str)),
-            Token::LineBreak => Some(Marker::LineBreak),
-            _ => None
-        };
-
-        if tag.is_none() {
-            continue;
-        }
-
-        if i > 0 {
-            output.push(Marker::UnexpectedToken {
-                expected: token,
-                actual: &tokens[..i],
-            });
-        }
-
-        output.push(tag.unwrap());
-
-        return [
-            output, 
-            output_whitespace_or_unexpected_token(&tokens[i + 1..], token, mark)
-        ].concat();
-    }
-
-    output.push(Marker::UnexpectedToken {
-        expected: token,
-        actual: tokens,
-    });
-
-    output.push(mark(token));
-
-    output
-}
 
 fn expect_pred<'a, U>(pred: impl Fn(&'a Token<'a>) -> bool, mark: U) -> impl Parser<'a, Token<'a>>
 where
     U: Fn(Token<'a>) -> Marker<'a>,
 {
     move |run: Run<'a>, deny: Deny<'a>| {
-        let (_, tokens, token, run) = match run.first_where(&pred, deny) {
-            None => return ParseResult::Error,
-            Some(result) => result,
+        let span = match run.first_where(&pred, deny) {
+            Pass::None(_) => return ParseResult::Error,
+            Pass::Some(_, span) => span
         };
 
-        let tags = output_whitespace_or_unexpected_token(tokens, token, &mark);
+        let markers = mark_as_whitespace_or_unexpected_token(span.tail(), span.head(), &mark);
 
-        ParseResult::Success(token, tags, run)
+        ParseResult::Success(
+            span.head(), 
+            markers, 
+            span.next()
+        )
     }
 }
 
@@ -216,21 +221,22 @@ where
     U: Fn(Token<'a>) -> Marker<'a>
 {
     move |run: Run<'a>, _: Deny<'a>| {
-        let next = run.next(|t: &Token| t.dist() > 0);
+        let span = match run.next_pass(|t: &Token| t.dist() > 0) {
+            Pass::None(_) => return ParseResult::Error,
+            Pass::Some(_, span) => span,
+        };
 
-        if next.is_none() {
+        if span.head() != expect {
             return ParseResult::Error;
         }
 
-        let (_, tokens, token, run) = next.unwrap();
+        let markers = mark_as_whitespace_or_unexpected_token(
+            span.tail(), 
+            span.head(), 
+            &mark
+        );
 
-        if token != expect {
-            return ParseResult::Error;
-        }
-
-        let tags = output_whitespace_or_unexpected_token(tokens, token, &mark);
-
-        ParseResult::Success((), tags, run)
+        ParseResult::Success((), markers, span.next())
     }
 }
 
@@ -241,17 +247,18 @@ where
     U: Fn(T, Token<'a>) -> Marker<'a>,
 {
     move |run: Run<'a>, deny: Deny<'a>| {
-        let next = run.first_where_some(&expect, deny);
+        let (val, span) = match run.first_where_some(&expect, deny) {
+            Pass::None(_) => return ParseResult::Error,
+            Pass::Some(val, span) => (val, span)
+        };
 
-        if next.is_none() {
-            return ParseResult::Error;
-        }
+        let markers = mark_as_whitespace_or_unexpected_token(
+            span.tail(), 
+            span.head(), 
+            |token| mark(val, token)
+        );
 
-        let (_, val, tokens, token, run) = next.unwrap();
-
-        let tags = output_whitespace_or_unexpected_token(tokens, token, |token| mark(val, token));
-
-        ParseResult::Success(val, tags, run)
+        ParseResult::Success(val, markers, span.next())
     }
 }
 
@@ -271,25 +278,25 @@ where
                 continue;
             }
 
-            let (value, tags, next) = result.unwrap();
+            let (value, markers, next) = result.unwrap();
 
             if next.dist() == run.dist() {
-                best = ParseResult::Success(value, tags, next);
+                best = ParseResult::Success(value, markers, next);
                 break;
             }
 
             if best.is_err() { 
-                best = ParseResult::Success(value, tags, next);
+                best = ParseResult::Success(value, markers, next);
                 continue;
             }
 
             if next.dist() < best.dist() {
-                best = ParseResult::Success(value, tags, next);
+                best = ParseResult::Success(value, markers, next);
                 continue;
             }
 
             if next.remaining_input_len() < best.remaining_input_len() {
-                best = ParseResult::Success(value, tags, next);
+                best = ParseResult::Success(value, markers, next);
                 continue;
             }
         }
@@ -305,20 +312,20 @@ where
     F: Fn(A, B) -> T,
 {
     move |run: Run<'a>, deny: Deny<'a>| {
-        let (value1, tags1, run) = match first.parse(run.clone(), deny.clone()) {
-            ParseResult::Success(value, tags, run) => (value, tags, run),
+        let (value1, markers1, run) = match first.parse(run.clone(), deny.clone()) {
+            ParseResult::Success(value, markers, run) => (value, markers, run),
             ParseResult::Error => return ParseResult::Error,
         };
 
-        let (value2, tags2, run) = match second.parse(run.clone(), deny.clone()) {
-            ParseResult::Success(value, tags, run) => (value, tags, run),
+        let (value2, markers2, run) = match second.parse(run.clone(), deny.clone()) {
+            ParseResult::Success(value, markers, run) => (value, markers, run),
             ParseResult::Error => return ParseResult::Error,
         };
 
-        let tags3 = [tags1, tags2].concat();
+        let markers3 = [markers1, markers2].concat();
         let result3 = combine(value1, value2);
 
-        ParseResult::Success(result3, tags3, run)
+        ParseResult::Success(result3, markers3, run)
     }
 }
 
@@ -328,19 +335,19 @@ where
     Q: Parser<'a, B>,
 {
     move |run: Run<'a>, deny: Deny<'a>| {
-        let (value1, tags1, run) = match first.parse(run.clone(), deny.clone()) {
-            ParseResult::Success(value, tags, run) => (value, tags, run),
+        let (value1, markers1, run) = match first.parse(run.clone(), deny.clone()) {
+            ParseResult::Success(value, markers, run) => (value, markers, run),
             ParseResult::Error => return ParseResult::Error,
         };
 
-        let (_, tags2, run) = match second.parse(run.clone(), deny.clone()) {
-            ParseResult::Success(value, tags, run) => (value, tags, run),
+        let (_, markers2, run) = match second.parse(run.clone(), deny.clone()) {
+            ParseResult::Success(value, markers, run) => (value, markers, run),
             ParseResult::Error => return ParseResult::Error,
         };
 
-        let tags3 = [tags1, tags2].concat();
+        let markers3 = [markers1, markers2].concat();
 
-        ParseResult::Success(value1, tags3, run)
+        ParseResult::Success(value1, markers3, run)
     }
 }
 
@@ -351,19 +358,19 @@ where
     Q: Parser<'a, B>,
 {
     move |run: Run<'a>, deny: Deny<'a>| {
-        let (_, tags1, run) = match first.parse(run.clone(), deny.clone()) {
-            ParseResult::Success(value, tags, run) => (value, tags, run),
+        let (_, markers1, run) = match first.parse(run.clone(), deny.clone()) {
+            ParseResult::Success(value, markers, run) => (value, markers, run),
             ParseResult::Error => return ParseResult::Error,
         };
 
-        let (value2, tags2, run) = match second.parse(run.clone(), deny.clone()) {
-            ParseResult::Success(value, tags, run) => (value, tags, run),
+        let (value2, markers2, run) = match second.parse(run.clone(), deny.clone()) {
+            ParseResult::Success(value, markers, run) => (value, markers, run),
             ParseResult::Error => return ParseResult::Error,
         };
 
-        let tags3 = [tags1, tags2].concat();
+        let markers3 = [markers1, markers2].concat();
 
-        ParseResult::Success(value2, tags3, run)
+        ParseResult::Success(value2, markers3, run)
     }
 }
 
@@ -373,7 +380,7 @@ where
 {
     move |run: Run<'a>, deny: Deny<'a>| {
         let mut run = run;
-        let mut tags = Vec::new();
+        let mut markers = Vec::new();
         let mut values = Vec::new();
 
         loop {
@@ -381,16 +388,16 @@ where
             let inner_deny = deny.clone();
 
             let (value, ts, next) = match  parser.parse(inner_run, inner_deny) {
-                ParseResult::Success(value, tags, run) => (value, tags, run),
+                ParseResult::Success(value, markers, run) => (value, markers, run),
                 ParseResult::Error => break,
             };
 
             run = next;
-            tags = [tags, ts].concat();
+            markers = [markers, ts].concat();
             values.push(value);
         }
 
-        ParseResult::Success(values, tags, run)
+        ParseResult::Success(values, markers, run)
     }
 }
 
@@ -423,12 +430,12 @@ fn seperated_by<'a, T>(parser: impl Parser<'a, T>, separator: Token<'static>) ->
         // parse the first element
         let first_element = parser.parse(run.clone(), deny.clone());
 
-        let (mut values, mut tags, mut run) = match first_element {
+        let (mut values, mut markers, mut run) = match first_element {
             ParseResult::Error => {
                 return ParseResult::Success(Vec::new(), Vec::new(), run)
             },
-            ParseResult::Success(value, tags, run) => {
-                (vec![value], tags, run)
+            ParseResult::Success(value, markers, run) => {
+                (vec![value], markers, run)
             }
         };
 
@@ -439,7 +446,7 @@ fn seperated_by<'a, T>(parser: impl Parser<'a, T>, separator: Token<'static>) ->
                     break;
                 },
                 ParseResult::Success(_, mut ts, next) => {
-                    tags.append(&mut ts);
+                    markers.append(&mut ts);
                     run = next;
                 }
             };
@@ -451,13 +458,13 @@ fn seperated_by<'a, T>(parser: impl Parser<'a, T>, separator: Token<'static>) ->
                 },
                 ParseResult::Success(value, mut ts, next) => {
                     values.push(value);
-                    tags.append(&mut ts);
+                    markers.append(&mut ts);
                     run = next;
                 }
             }
         }
 
-        ParseResult::Success(values, tags, run)
+        ParseResult::Success(values, markers, run)
     }
 }
 
@@ -523,7 +530,7 @@ enum Associativity {
 ///
 fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
     move |run: Run<'a>, deny: Deny<'a>| {
-        let (mut lhs, mut tags, mut run) = match parse_expr_primary().parse(run, deny.clone()) {
+        let (mut lhs, mut markers, mut run) = match parse_expr_primary().parse(run, deny.clone()) {
             ParseResult::Error => return ParseResult::Error,
             ParseResult::Success(expr, fs, next) => (expr, fs, next),
         };
@@ -558,7 +565,7 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
                 break;
             }
 
-            tags.append(&mut ts);
+            markers.append(&mut ts);
             run = next;
 
             let new_min_prec = if assoc == Associativity::Left {
@@ -570,7 +577,7 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
             let rhs = match parse_expr_1(new_min_prec).parse(run.clone(), deny.clone()) {
                 ParseResult::Error => break,
                 ParseResult::Success(rhs, mut fs, next) => {
-                    tags.append(&mut fs);
+                    markers.append(&mut fs);
                     run = next;
                     rhs
                 }
@@ -595,7 +602,7 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
             };
         }
 
-        ParseResult::Success(lhs, tags, run)
+        ParseResult::Success(lhs, markers, run)
     }
 }
 
@@ -645,20 +652,20 @@ pub fn parse_stmt_if<'a>() -> impl Parser<'a, Stmt> {
     );
 
     let parse_else = |run: Run<'a>, deny: Deny<'a>| {
-        let is_else = |&t| t == Token::Else;
+        let is_else = |&token| token == Token::Else;
         let deny_any = |t: &Token| t.dist() > 0;
 
-        let (_, tokens, _, next) = match run.first_where(is_else, deny_any) {
-            None => return ParseResult::Success(None, Vec::new(), run),
-            Some(result) => result,
+        let span = match run.first_where(is_else, deny_any) {
+            Pass::None(run) => return ParseResult::Success(None, Vec::new(), run),
+            Pass::Some(_, span) => span,
         };
 
-        let tags = output_whitespace_or_unexpected_token(tokens, Token::Else, Marker::Keyword);
+        let markers = mark_as_whitespace_or_unexpected_token(span.tail(), Token::Else, Marker::Keyword);
 
-        match parse_stmt_block().parse(next, deny) {
+        match parse_stmt_block().parse(span.next(), deny) {
             ParseResult::Error => ParseResult::Error,
-            ParseResult::Success(stmt, stmt_tags, next) => {
-                ParseResult::Success(Some(stmt), [tags, stmt_tags].concat(), next)
+            ParseResult::Success(stmt, stmt_markers, next) => {
+                ParseResult::Success(Some(stmt), [markers, stmt_markers].concat(), next)
             }
         }
     };
@@ -714,32 +721,31 @@ fn parse_stmt<'a>() -> impl Parser<'a, Stmt> {
     };
 
     move |run: Run<'a>, deny: Deny<'a>| {
-        let (tokens, token, next) = match run.find(is_stmt_token, deny.clone()) {
-            Some((_, tokens, token, run)) => (tokens, token, run),
-            None => return ParseResult::Error
+        let span = match run.until_where(is_stmt_token, deny.clone()) {
+            Pass::None(_) => return ParseResult::Error,
+            Pass::Some(_, span) => span
         };
 
-        let parse_result = match token {
-            Token::Number(_) => parse_stmt_expr().parse(next, deny),
-            Token::Identifier(_) => parse_stmt_expr().parse(next, deny),
-            Token::LeftParen => parse_stmt_expr().parse(next, deny),
-            Token::LeftBrace => parse_stmt_block().parse(next, deny),
-            Token::If => parse_stmt_if().parse(next, deny),
-            Token::While => parse_stmt_while().parse(next, deny),
-            Token::Forward => parse_stmt_move().parse(next, deny),
-            Token::Left => parse_stmt_move().parse(next, deny),
-            Token::Right => parse_stmt_move().parse(next, deny),
-            Token::Return => parse_stmt_return().parse(next, deny),
+        let mut markers1 = mark_as_whitespace_or_unexpected_token(span.all(), *span.peek(), Marker::Plain);
+        markers1.pop();
+
+        let parse_result = match span.peek() {
+            Token::Number(_) => parse_stmt_expr().parse(span.next(), deny),
+            Token::Identifier(_) => parse_stmt_expr().parse(span.next(), deny),
+            Token::LeftParen => parse_stmt_expr().parse(span.next(), deny),
+            Token::LeftBrace => parse_stmt_block().parse(span.next(), deny),
+            Token::If => parse_stmt_if().parse(span.next(), deny),
+            Token::While => parse_stmt_while().parse(span.next(), deny),
+            Token::Forward => parse_stmt_move().parse(span.next(), deny),
+            Token::Left => parse_stmt_move().parse(span.next(), deny),
+            Token::Right => parse_stmt_move().parse(span.next(), deny),
+            Token::Return => parse_stmt_return().parse(span.next(), deny),
             _ => unreachable!()
         };
 
         if parse_result.is_err() {
             return ParseResult::Error;
         }
-
-        
-        let mut markers1 = output_whitespace_or_unexpected_token(tokens, token, Marker::Plain);
-        markers1.pop();
 
         let (value, markers2, next) = parse_result.unwrap();
 
