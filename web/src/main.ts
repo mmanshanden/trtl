@@ -25,7 +25,7 @@ const loadRenderer = (): Promise<Worker> => {
 
 const init = async () => {
     const renderer = await loadRenderer()
-    const module = await loadModule('wasm/wasm32-unknown-unknown/release/trtl.wasm')
+    const module = await loadModule('./wasm/wasm32-unknown-unknown/release/trtl.wasm')
     const editorElement = document.querySelector<HTMLDivElement>("div#editor")!;
     const canvasElement = document.querySelector<HTMLCanvasElement>("canvas#canvas")!;
     

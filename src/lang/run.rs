@@ -23,7 +23,7 @@ pub enum Marker<'a> {
     }
 }
 
-pub type Echo<'a> = Vec<Marker<'a>>;
+pub type Markers<'a> = Vec<Marker<'a>>;
 
 pub trait Contains<'a> {
     fn contains(&self, token: &'a Token<'a>) -> bool;
@@ -117,6 +117,7 @@ impl<'a> Run<'a> {
         None
     }
 
+
     pub fn first_where(
         &self,
         pred: impl Fn(&'a Token<'a>) -> bool,
@@ -149,6 +150,23 @@ impl<'a> Run<'a> {
         None
     }
 
+    /// Traverses the input until the given predicate returns a `Some` value. Tokens
+    /// cannot be skipped when they are contained in the provided `deny` set.
+    ///
+    /// The predicate `pred` is provided two arguments: 
+    ///   1. `token`, the current token in the stream
+    ///   2. `peek`, the token that comes after `token`, or `Token::Eof` if `token` 
+    ///              is at the end of the stream.
+    /// 
+    /// The returned tuple contains in order:
+    ///   1. The `dist` distance value of skipped tokens.
+    ///   2. The value returned by `pred`.
+    ///   3. A `tokens` slice of skipped tokens.
+    ///   4. The first `token` for which the predicate returned `true`.
+    ///   5. The `next` run struct that can be used for parsing the remaining
+    ///      input.
+    ///            
+    /// A `None` is returned when the predicate never matches any input.
     pub fn first_where_some<T>(
         &self,
         pred: impl Fn(&'a Token<'a>) -> Option<T>,

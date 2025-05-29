@@ -1,4 +1,4 @@
-use super::{ast::{Entry, Expr, Program, Stmt}, lex::Token, run::{Contains, Run, Marker, Echo, Tokens}};
+use super::{ast::{Entry, Expr, Program, Stmt}, lex::Token, run::{Contains, Run, Marker, Markers, Tokens}};
 
 pub type Deny<'a> = Vec<Token<'a>>;
 
@@ -12,7 +12,7 @@ impl<'a> Contains<'a> for Deny<'a> {
 
 #[derive(Debug, Clone)]
 pub enum ParseResult<'a, T> {
-    Success(T, Echo<'a>, Run<'a>),
+    Success(T, Markers<'a>, Run<'a>),
     Error,
 }
 
@@ -31,7 +31,7 @@ impl<'a, T> ParseResult<'a, T> {
         }
     }
 
-    pub fn unwrap(self) -> (T, Echo<'a>, Run<'a>) {
+    pub fn unwrap(self) -> (T, Markers<'a>, Run<'a>) {
         match self {
             Self::Success(value, fragments, run) => (value, fragments, run),
             Self::Error => panic!("Called `unwrap` on an `Error` value"),
@@ -133,11 +133,11 @@ where
 }
 
 
-fn expect<'a, U>(expect: Token<'static>, echo: U) -> impl Parser<'a, ()>
+fn expect<'a, U>(expect: Token<'static>, mark: U) -> impl Parser<'a, ()>
 where
     U: Fn(Token<'a>) -> Marker<'a>,
 {
-    let parser = expect_pred(move |&t| t == expect, echo);
+    let parser = expect_pred(move |&t| t == expect, mark);
 
     move |run: Run<'a>, deny: Deny<'a>| {
         match parser.parse(run, deny) {
@@ -147,12 +147,12 @@ where
     }
 }
 
-fn output_whitespace_or_unexpected_token<'a, F>(tokens: Tokens<'a>, token: Token<'a>, echo: F) -> Vec<Marker<'a>>
+fn output_whitespace_or_unexpected_token<'a, F>(tokens: Tokens<'a>, token: Token<'a>, mark: F) -> Vec<Marker<'a>>
 where
     F: Fn(Token<'a>) -> Marker<'a>
 {
     if tokens.is_empty() {
-        return vec![echo(token)];
+        return vec![mark(token)];
     }
 
     let mut output = Vec::new();
@@ -180,7 +180,7 @@ where
 
         return [
             output, 
-            output_whitespace_or_unexpected_token(&tokens[i + 1..], token, echo)
+            output_whitespace_or_unexpected_token(&tokens[i + 1..], token, mark)
         ].concat();
     }
 
@@ -189,12 +189,12 @@ where
         actual: tokens,
     });
 
-    output.push(echo(token));
+    output.push(mark(token));
 
     output
 }
 
-fn expect_pred<'a, U>(pred: impl Fn(&'a Token<'a>) -> bool, echo: U) -> impl Parser<'a, Token<'a>>
+fn expect_pred<'a, U>(pred: impl Fn(&'a Token<'a>) -> bool, mark: U) -> impl Parser<'a, Token<'a>>
 where
     U: Fn(Token<'a>) -> Marker<'a>,
 {
@@ -204,14 +204,14 @@ where
             Some(result) => result,
         };
 
-        let tags = output_whitespace_or_unexpected_token(tokens, token, &echo);
+        let tags = output_whitespace_or_unexpected_token(tokens, token, &mark);
 
         ParseResult::Success(token, tags, run)
     }
 }
 
 
-fn expect_next<'a, U>(expect: Token<'static>, echo: U) -> impl Parser<'a, ()>
+fn expect_next<'a, U>(expect: Token<'static>, mark: U) -> impl Parser<'a, ()>
 where
     U: Fn(Token<'a>) -> Marker<'a>
 {
@@ -228,13 +228,13 @@ where
             return ParseResult::Error;
         }
 
-        let tags = output_whitespace_or_unexpected_token(tokens, token, &echo);
+        let tags = output_whitespace_or_unexpected_token(tokens, token, &mark);
 
         ParseResult::Success((), tags, run)
     }
 }
 
-fn expect_some<'a, F, U, T>(expect: F, echo: U) -> impl Parser<'a, T>
+fn expect_some<'a, F, U, T>(expect: F, mark: U) -> impl Parser<'a, T>
 where
     T: Copy,
     F: Fn(&'a Token<'a>) -> Option<T>,
@@ -249,7 +249,7 @@ where
 
         let (_, val, tokens, token, run) = next.unwrap();
 
-        let tags = output_whitespace_or_unexpected_token(tokens, token, |token| echo(val, token));
+        let tags = output_whitespace_or_unexpected_token(tokens, token, |token| mark(val, token));
 
         ParseResult::Success(val, tags, run)
     }

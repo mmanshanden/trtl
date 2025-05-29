@@ -64,8 +64,6 @@ export const highlight = (module: WasmModule, input: string): Line[] => {
                 let hint = fragment[1]
                 let utf8 = fragment.subarray(2, fragment.length)
 
-                console.log(kind)
-
                 return {
                     value: decoder.decode(utf8),
                     kind: translate_kind(kind),
