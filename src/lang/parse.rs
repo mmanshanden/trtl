@@ -1,6 +1,6 @@
-use super::{ast::{Entry, Expr, Program, Stmt}, lex::Token, run::{Contains, Marker, Markers, Run, Tokens, Span, Pass}};
+use super::{ast::{Entry, Expr, Program, Stmt}, lex::{Token, Tokens}, run::{Contains, Pass, Run}, Context, Marker, Markers};
 
-fn mark_as_whitespace_or_unexpected_token<'a, F>(tokens: Tokens<'a>, token: Token<'a>, mark: F) -> Vec<Marker<'a>>
+fn mark_as_whitespace_or_unexpected_token<'a, F>(tokens: Tokens<'a>, token: Token<'a>, mark: F) -> Markers<'a>
 where
     F: Fn(Token<'a>) -> Marker<'a>
 {
@@ -145,6 +145,44 @@ pub trait Parser<'a, T> {
             let deny = vec![deny];
             let deny = [deny, parent].concat();
             self.parse(run, deny)
+        }
+    }
+
+    fn update_context(self, map: impl Fn(T, Context<'a>) -> Context<'a>) -> impl Parser<'a, T>
+    where
+        T: Clone,
+        Self: Sized
+    {
+        move |run: Run<'a>, deny: Deny<'a>| {
+            match self.parse(run, deny) {
+                ParseResult::Error => ParseResult::Error,
+                ParseResult::Success(val, markers, run) => {
+                    let run = run.update_context(|ctx: Context<'a>| {
+                        map(val.clone(), ctx)
+                    });
+
+                    ParseResult::Success(val, markers, run)
+                }
+            }
+        }
+    }
+
+    fn check_context(self, pred: impl Fn(T, &Context<'a>) -> bool) -> impl Parser<'a, T>
+    where
+        T: Clone,
+        Self: Sized
+    {
+        move |run: Run<'a>, deny: Deny<'a>| {
+            match self.parse(run, deny) {
+                ParseResult::Error => ParseResult::Error,
+                ParseResult::Success(val, markers, run) => {
+                    if pred(val.clone(), &run.context) {
+                        return ParseResult::Success(val, markers, run)
+                    }
+
+                    return ParseResult::Error;
+                }
+            }
         }
     }
 
@@ -484,11 +522,13 @@ pub fn parse_expr_primary<'a>() -> impl Parser<'a, Expr> {
                 Token::RightParen,
                 seperated_by(parse_expr(), Token::Comma)
             ),
-            |id, args| {
-                let id = id.to_string();
-                Expr::Call(id, args)
-            }
-        ).parse(run, deny)
+            |id, args| (id, args)
+        ).check_context(|(id, args), ctx| {
+            ctx.functions.contains(&(id, args.len()))
+        }).map(|(id, args)| {
+            let id = id.to_string();
+            Expr::Call(id, args)
+        }).parse(run, deny)
     };
 
     let identifier_parser = |run: Run<'a>, deny: Deny<'a>| {
@@ -538,7 +578,7 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
         let lhs_is_var = matches!(lhs, Expr::Var(_));
 
         let some_operation = |&token| match token {
-            Token::Assign if lhs_is_var => Some((Token::Assign, 0, Associativity::Left)),
+            Token::Assign if lhs_is_var => Some((Token::Assign, 0, Associativity::Right)),
             Token::Equals => Some((Token::Equals, 1, Associativity::Left)),
             Token::NotEqual => Some((Token::NotEqual, 1, Associativity::Left)),
             Token::LessThan => Some((Token::LessThan, 1, Associativity::Left)),
@@ -611,10 +651,18 @@ pub fn parse_expr<'a>() -> impl Parser<'a, Expr> {
 }
 
 fn parse_stmt_block<'a>() -> impl Parser<'a, Stmt> {
-    wrapped(
-        Token::LeftBrace,
-        Token::RightBrace,
-        many(parse_stmt()).map(Stmt::Scope)
+    second(
+        expect(Token::LeftBrace, Marker::Plain).update_context(|_, ctx| {
+            Context { 
+                variables: ctx.variables, 
+                functions: ctx.functions, 
+                scope: super::Scope::Local 
+            }
+        }),
+        first(
+            many(parse_stmt()).deny(Token::RightBrace).map(Stmt::Scope),
+            expect(Token::RightBrace, Marker::Plain),
+        )        
     )
 }
 
@@ -774,7 +822,16 @@ pub fn parse_func<'a>() -> impl Parser<'a, Entry> {
             |name, params| (name, params)
         ),
         |_, header| header
-    );
+    ).update_context(|(func, vars), ctx| {
+        let mut functions = ctx.functions;
+        functions.insert((&func, vars.len()));
+
+        Context {
+            variables: ctx.variables,
+            functions,
+            scope: ctx.scope,
+        }
+    });
 
     combine(
         header_parser,

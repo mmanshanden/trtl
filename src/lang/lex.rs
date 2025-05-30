@@ -51,6 +51,7 @@ pub enum Token<'a> {
     LineBreak
 }
 
+pub type Tokens<'a> = &'a [Token<'a>];
 
 impl<'a> Token<'a> {
     pub fn identifier(&self) -> Option<&'a str> {

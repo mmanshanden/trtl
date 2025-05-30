@@ -1,7 +1,8 @@
-use core::fmt;
-use std::{fmt::Debug, rc::Rc, vec};
+use std::{collections::{HashMap, HashSet}, fmt::Debug};
 
-#[derive(Debug)]
+use super::{lex::Tokens, Token};
+
+#[derive(Debug, Clone)]
 pub enum Expr {
     Assign(Box<Expr>, Box<Expr>),
 
@@ -22,7 +23,7 @@ pub enum Expr {
     Call(String, Vec<Expr>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Stmt {
     If(Expr, Box<Stmt>),
     IfElse(Expr, Box<Stmt>, Box<Stmt>),
@@ -35,10 +36,56 @@ pub enum Stmt {
     Return(Option<Expr>)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Entry {
     Func(String, Vec<String>, Stmt),
     Stmt(Stmt)
 }
 
 pub type Program = Vec<Entry>;
+
+#[derive(Debug, Clone, Copy)]
+pub enum Scope {
+    Global,
+    Local
+}
+
+#[derive(Debug, Clone)]
+pub struct Context<'a> {
+    pub variables: HashMap<&'a str, Scope>,
+    pub functions: HashSet<(&'a str, usize)>,
+    pub scope: Scope
+}
+
+impl<'a> Context<'a> {
+    pub fn new() -> Context<'a> {
+        return Self {
+            variables: HashMap::new(),
+            functions: HashSet::new(),
+            scope: Scope::Global
+        };
+    }
+}
+
+
+#[derive(Debug, Clone)]
+pub enum Marker<'a> {
+    Number(&'a str),
+    Identifier(&'a str),
+    Function(&'a str),
+    Flow(Token<'a>),
+    Call(&'a str),
+    Keyword(Token<'a>),
+    Plain(Token<'a>),
+    Move(Token<'a>),
+    Comment(&'a str),
+    Whitespace(&'a str),
+    LineBreak,
+
+    UnexpectedToken {
+        expected: Token<'a>,
+        actual: Tokens<'a>,
+    }
+}
+
+pub type Markers<'a> = Vec<Marker<'a>>;

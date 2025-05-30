@@ -1,30 +1,4 @@
-use super::lex::Token;
-
-
-pub type Tokens<'a> = &'a [Token<'a>];
-
-
-#[derive(Debug, Clone)]
-pub enum Marker<'a> {
-    Number(&'a str),
-    Identifier(&'a str),
-    Function(&'a str),
-    Flow(Token<'a>),
-    Call(&'a str),
-    Keyword(Token<'a>),
-    Plain(Token<'a>),
-    Move(Token<'a>),
-    Comment(&'a str),
-    Whitespace(&'a str),
-    LineBreak,
-
-    UnexpectedToken {
-        expected: Token<'a>,
-        actual: Tokens<'a>,
-    }
-}
-
-pub type Markers<'a> = Vec<Marker<'a>>;
+use super::{lex::{Token, Tokens}, Context};
 
 pub trait Contains<'a> {
     fn contains(&self, token: &'a Token<'a>) -> bool;
@@ -77,6 +51,7 @@ pub enum Pass<'a, T> {
 pub struct Run<'a> {
     dist: usize,
     input: Tokens<'a>,
+    pub context: Context<'a>
 }
 
 impl<'a> Run<'a> {
@@ -84,6 +59,7 @@ impl<'a> Run<'a> {
         Run {
             dist: 0,
             input,
+            context: Context::new()
         }
     }
 
@@ -95,7 +71,8 @@ impl<'a> Run<'a> {
                 tokens: &self.input[..offset], 
                 next: Run { 
                     dist: self.dist + dist, 
-                    input: &self.input[offset..] 
+                    input: &self.input[offset..],
+                    context: self.context
                 } 
             }
         )
@@ -206,6 +183,15 @@ impl<'a> Run<'a> {
 
         Pass::None(self)
     }
+
+    pub fn update_context(self, map: impl Fn(Context<'a>) -> Context<'a>) -> Run<'a> {
+        Run { 
+            dist: self.dist, 
+            input: self.input, 
+            context: map(self.context) 
+        }
+    }
+
 }
 
 #[cfg(test)]
