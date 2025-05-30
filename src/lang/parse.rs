@@ -563,6 +563,21 @@ enum Associativity {
     Right,
 }
 
+#[derive(PartialEq, Clone, Copy, Debug)]
+enum Operation {
+    Assign,
+    Equals,
+    NotEqual,
+    LessThan,
+    LessEqualThan,
+    GreaterThan,
+    GreaterEqualThan,
+    Plus,
+    Minus,
+    Multiply,
+    Divide,
+}
+
 
 /// The recurrent case for a given minimum precedence level
 /// 
@@ -578,34 +593,35 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
         let lhs_is_var = matches!(lhs, Expr::Var(_));
 
         let some_operation = |&token| match token {
-            Token::Assign if lhs_is_var => Some((Token::Assign, 0, Associativity::Right)),
-            Token::Equals => Some((Token::Equals, 1, Associativity::Left)),
-            Token::NotEqual => Some((Token::NotEqual, 1, Associativity::Left)),
-            Token::LessThan => Some((Token::LessThan, 1, Associativity::Left)),
-            Token::LessEqualThan => Some((Token::LessEqualThan, 1, Associativity::Left)),
-            Token::GreaterThan => Some((Token::GreaterThan, 1, Associativity::Left)),
-            Token::GreaterEqualThan => Some((Token::GreaterEqualThan, 1, Associativity::Left)),
-            Token::Plus => Some((Token::Plus, 2, Associativity::Left)),
-            Token::Minus => Some((Token::Minus, 2, Associativity::Left)),
-            Token::Multiply => Some((Token::Multiply, 3, Associativity::Left)),
-            Token::Divide => Some((Token::Divide, 3, Associativity::Left)),
+            Token::Assign if lhs_is_var => Some((Operation::Assign, 0, Associativity::Right)),
+            Token::Equals => Some((Operation::Equals, 1, Associativity::Left)),
+            Token::NotEqual => Some((Operation::NotEqual, 1, Associativity::Left)),
+            Token::LessThan => Some((Operation::LessThan, 1, Associativity::Left)),
+            Token::LessEqualThan => Some((Operation::LessEqualThan, 1, Associativity::Left)),
+            Token::GreaterThan => Some((Operation::GreaterThan, 1, Associativity::Left)),
+            Token::GreaterEqualThan => Some((Operation::GreaterEqualThan, 1, Associativity::Left)),
+            Token::Plus => Some((Operation::Plus, 2, Associativity::Left)),
+            Token::Minus => Some((Operation::Minus, 2, Associativity::Left)),
+            Token::Multiply => Some((Operation::Multiply, 3, Associativity::Left)),
+            Token::Divide => Some((Operation::Divide, 3, Associativity::Left)),
             _ => None,
         };
 
         loop {
-            let inner_run = run.clone();
-            let inner_deny = deny.clone();
+            let result = expect_some(some_operation, |_, token| Marker::Plain(token)).parse(run.clone(), deny.clone());
 
-            let (op, prec, assoc, mut ts, next) = match expect_some(some_operation, |_, token| Marker::Plain(token)).parse(inner_run, inner_deny) {
-                ParseResult::Success((op, prec, assoc), ts, next) => (op, prec, assoc, ts, next),
-                ParseResult::Error => break,
-            };
+            if result.is_err() {
+                break;
+            }
+
+            let (operation, mut inner_marks, next) = result.unwrap();
+            let (operation, prec, assoc) = operation;
 
             if prec < min_prec {
                 break;
             }
 
-            markers.append(&mut ts);
+            markers.append(&mut inner_marks);
             run = next;
 
             let new_min_prec = if assoc == Associativity::Left {
@@ -626,19 +642,18 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
             let lhs_boxxed = Box::new(lhs);
             let rhs_boxxed = Box::new(rhs);
 
-            lhs = match op {
-                Token::Assign => Expr::Assign(lhs_boxxed, rhs_boxxed),
-                Token::Equals => Expr::Equals(lhs_boxxed, rhs_boxxed),
-                Token::NotEqual => Expr::NotEqual(lhs_boxxed, rhs_boxxed),
-                Token::GreaterThan => Expr::GreaterThan(lhs_boxxed, rhs_boxxed),
-                Token::GreaterEqualThan => Expr::GreaterEqualThan(lhs_boxxed, rhs_boxxed),
-                Token::LessThan => Expr::LessThan(lhs_boxxed, rhs_boxxed),
-                Token::LessEqualThan => Expr::LessEqualThan(lhs_boxxed, rhs_boxxed),
-                Token::Plus => Expr::Add(lhs_boxxed, rhs_boxxed),
-                Token::Minus => Expr::Sub(lhs_boxxed, rhs_boxxed),
-                Token::Multiply => Expr::Mul(lhs_boxxed, rhs_boxxed),
-                Token::Divide => Expr::Div(lhs_boxxed, rhs_boxxed),
-                _ => unreachable!("Token is not an operator"),
+            lhs = match operation {
+                Operation::Assign => Expr::Assign(lhs_boxxed, rhs_boxxed),
+                Operation::Equals => Expr::Equals(lhs_boxxed, rhs_boxxed),
+                Operation::NotEqual => Expr::NotEqual(lhs_boxxed, rhs_boxxed),
+                Operation::GreaterThan => Expr::GreaterThan(lhs_boxxed, rhs_boxxed),
+                Operation::GreaterEqualThan => Expr::GreaterEqualThan(lhs_boxxed, rhs_boxxed),
+                Operation::LessThan => Expr::LessThan(lhs_boxxed, rhs_boxxed),
+                Operation::LessEqualThan => Expr::LessEqualThan(lhs_boxxed, rhs_boxxed),
+                Operation::Plus => Expr::Add(lhs_boxxed, rhs_boxxed),
+                Operation::Minus => Expr::Sub(lhs_boxxed, rhs_boxxed),
+                Operation::Multiply => Expr::Mul(lhs_boxxed, rhs_boxxed),
+                Operation::Divide => Expr::Div(lhs_boxxed, rhs_boxxed),
             };
         }
 
