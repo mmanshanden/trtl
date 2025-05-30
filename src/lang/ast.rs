@@ -4,7 +4,7 @@ use super::{lex::Tokens, Token};
 
 #[derive(Debug, Clone)]
 pub enum Expr {
-    Assign(Box<Expr>, Box<Expr>),
+    Assign(String, Box<Expr>),
 
     Equals(Box<Expr>, Box<Expr>),
     NotEqual(Box<Expr>, Box<Expr>),
@@ -51,14 +51,14 @@ pub enum Scope {
 }
 
 #[derive(Debug, Clone)]
-pub struct Context<'a> {
-    pub variables: HashMap<&'a str, Scope>,
-    pub functions: HashSet<(&'a str, usize)>,
+pub struct Context {
+    pub variables: HashMap<String, Scope>,
+    pub functions: HashSet<(String, usize)>,
     pub scope: Scope
 }
 
-impl<'a> Context<'a> {
-    pub fn new() -> Context<'a> {
+impl Context {
+    pub fn new() -> Context {
         return Self {
             variables: HashMap::new(),
             functions: HashSet::new(),

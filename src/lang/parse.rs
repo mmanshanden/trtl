@@ -1,3 +1,5 @@
+use std::clone;
+
 use super::{ast::{Entry, Expr, Program, Stmt}, lex::{Token, Tokens}, run::{Contains, Pass, Run}, Context, Marker, Markers};
 
 fn mark_as_whitespace_or_unexpected_token<'a, F>(tokens: Tokens<'a>, token: Token<'a>, mark: F) -> Markers<'a>
@@ -148,7 +150,7 @@ pub trait Parser<'a, T> {
         }
     }
 
-    fn update_context(self, map: impl Fn(T, Context<'a>) -> Context<'a>) -> impl Parser<'a, T>
+    fn update_context(self, map: impl Fn(T, Context) -> Context) -> impl Parser<'a, T>
     where
         T: Clone,
         Self: Sized
@@ -157,7 +159,7 @@ pub trait Parser<'a, T> {
             match self.parse(run, deny) {
                 ParseResult::Error => ParseResult::Error,
                 ParseResult::Success(val, markers, run) => {
-                    let run = run.update_context(|ctx: Context<'a>| {
+                    let run = run.update_context(|ctx: Context| {
                         map(val.clone(), ctx)
                     });
 
@@ -167,7 +169,7 @@ pub trait Parser<'a, T> {
         }
     }
 
-    fn check_context(self, pred: impl Fn(T, &Context<'a>) -> bool) -> impl Parser<'a, T>
+    fn check_context(self, pred: impl Fn(T, &Context) -> bool) -> impl Parser<'a, T>
     where
         T: Clone,
         Self: Sized
@@ -280,7 +282,7 @@ where
 
 fn expect_some<'a, F, U, T>(expect: F, mark: U) -> impl Parser<'a, T>
 where
-    T: Copy,
+    T: Clone,
     F: Fn(&'a Token<'a>) -> Option<T>,
     U: Fn(T, Token<'a>) -> Marker<'a>,
 {
@@ -293,7 +295,7 @@ where
         let markers = mark_as_whitespace_or_unexpected_token(
             span.tail(), 
             span.head(), 
-            |token| mark(val, token)
+            |token| mark(val.clone(), token)
         );
 
         ParseResult::Success(val, markers, span.next())
@@ -524,7 +526,7 @@ pub fn parse_expr_primary<'a>() -> impl Parser<'a, Expr> {
             ),
             |id, args| (id, args)
         ).check_context(|(id, args), ctx| {
-            ctx.functions.contains(&(id, args.len()))
+            ctx.functions.contains(&(id.to_string(), args.len()))
         }).map(|(id, args)| {
             let id = id.to_string();
             Expr::Call(id, args)
@@ -535,7 +537,9 @@ pub fn parse_expr_primary<'a>() -> impl Parser<'a, Expr> {
         expect_some(
             Token::identifier,
             |id, _| Marker::Identifier(id)
-        ).map(|id| {
+        ).check_context(|id, ctx| {
+            ctx.variables.contains_key(id)
+        }).map(|id| {
             let id = id.to_string();
             Expr::Var(id)
         }).parse(run, deny)
@@ -563,9 +567,8 @@ enum Associativity {
     Right,
 }
 
-#[derive(PartialEq, Clone, Copy, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 enum Operation {
-    Assign,
     Equals,
     NotEqual,
     LessThan,
@@ -586,14 +589,13 @@ enum Operation {
 fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
     move |run: Run<'a>, deny: Deny<'a>| {
         let (mut lhs, mut markers, mut run) = match parse_expr_primary().parse(run, deny.clone()) {
-            ParseResult::Error => return ParseResult::Error,
             ParseResult::Success(expr, fs, next) => (expr, fs, next),
+            ParseResult::Error => return ParseResult::Error,
         };
 
-        let lhs_is_var = matches!(lhs, Expr::Var(_));
+        let mark = |_, token| Marker::Plain(token);
 
-        let some_operation = |&token| match token {
-            Token::Assign if lhs_is_var => Some((Operation::Assign, 0, Associativity::Right)),
+        let some_operation = |token: &Token<'a>| match token {
             Token::Equals => Some((Operation::Equals, 1, Associativity::Left)),
             Token::NotEqual => Some((Operation::NotEqual, 1, Associativity::Left)),
             Token::LessThan => Some((Operation::LessThan, 1, Associativity::Left)),
@@ -608,7 +610,7 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
         };
 
         loop {
-            let result = expect_some(some_operation, |_, token| Marker::Plain(token)).parse(run.clone(), deny.clone());
+            let result = expect_some(some_operation, mark).parse(run.clone(), deny.clone());
 
             if result.is_err() {
                 break;
@@ -630,7 +632,15 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
                 prec
             };
 
-            let rhs = match parse_expr_1(new_min_prec).parse(run.clone(), deny.clone()) {
+            let rhs = parse_expr_1(new_min_prec).check_context(|expr, ctx| {
+                if let Expr::Var(var) = expr {
+                    ctx.variables.contains_key(&var)
+                } else {
+                    true 
+                }
+            });
+
+            let rhs = match rhs.parse(run.clone(), deny.clone()) {
                 ParseResult::Error => break,
                 ParseResult::Success(rhs, mut fs, next) => {
                     markers.append(&mut fs);
@@ -643,7 +653,6 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
             let rhs_boxxed = Box::new(rhs);
 
             lhs = match operation {
-                Operation::Assign => Expr::Assign(lhs_boxxed, rhs_boxxed),
                 Operation::Equals => Expr::Equals(lhs_boxxed, rhs_boxxed),
                 Operation::NotEqual => Expr::NotEqual(lhs_boxxed, rhs_boxxed),
                 Operation::GreaterThan => Expr::GreaterThan(lhs_boxxed, rhs_boxxed),
@@ -662,23 +671,63 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
 }
 
 pub fn parse_expr<'a>() -> impl Parser<'a, Expr> {
-    parse_expr_1(0)
+    let assignment_parser = |run: Run<'a>, deny: Deny<'a>| {
+        combine(
+            expect_some(
+                Token::identifier,
+                |var, _| Marker::Identifier(var)
+            ),
+            second(
+                expect(Token::Assign, Marker::Plain),
+                parse_expr(),
+            ),
+            |var, expr| (var.to_string(), expr)
+        ).update_context(|(var, _), ctx| {
+            let mut variables = ctx.variables;
+            variables.insert(var.clone(), ctx.scope);
+
+            Context { variables: variables, functions: ctx.functions, scope: ctx.scope }
+        }).map(|(var, expr)| {
+            Expr::Assign(var, Box::new(expr))
+        }).parse(run, deny)
+    };
+    
+    let any_expr_parser = |run: Run<'a>, deny: Deny<'a>| {
+        parse_expr_1(0).parse(run, deny)
+    };
+
+    choice(vec![
+        assignment_parser,
+        any_expr_parser
+    ])
 }
 
 fn parse_stmt_block<'a>() -> impl Parser<'a, Stmt> {
-    second(
-        expect(Token::LeftBrace, Marker::Plain).update_context(|_, ctx| {
-            Context { 
-                variables: ctx.variables, 
-                functions: ctx.functions, 
-                scope: super::Scope::Local 
+    // implements scope drop
+    |run: Run<'a>, deny: Deny<'a>| {
+        let origin = run.context.clone();
+
+        let parser = second(
+            expect(Token::LeftBrace, Marker::Plain).update_context(|_, ctx| {
+                Context { 
+                    variables: ctx.variables, 
+                    functions: ctx.functions, 
+                    scope: super::Scope::Local 
+                }
+            }),
+            first(
+                many(parse_stmt()).deny(Token::RightBrace).map(Stmt::Scope),
+                expect(Token::RightBrace, Marker::Plain),
+            )        
+        );
+        
+        match parser.parse(run, deny) {
+            ParseResult::Error => ParseResult::Error,
+            ParseResult::Success(result, markers, next) => {
+                ParseResult::Success(result, markers, next.update_context(|_| origin.clone()))
             }
-        }),
-        first(
-            many(parse_stmt()).deny(Token::RightBrace).map(Stmt::Scope),
-            expect(Token::RightBrace, Marker::Plain),
-        )        
-    )
+        }
+    }
 }
 
 fn parse_stmt_expr<'a>() -> impl Parser<'a, Stmt> {
@@ -838,11 +887,17 @@ pub fn parse_func<'a>() -> impl Parser<'a, Entry> {
         ),
         |_, header| header
     ).update_context(|(func, vars), ctx| {
+        let mut variables = ctx.variables;
         let mut functions = ctx.functions;
-        functions.insert((&func, vars.len()));
+        
+        functions.insert((func.to_string(), vars.len()));
+
+        for var in vars {
+            variables.insert(var.to_string(), super::Scope::Local);
+        }
 
         Context {
-            variables: ctx.variables,
+            variables,
             functions,
             scope: ctx.scope,
         }

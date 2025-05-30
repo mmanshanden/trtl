@@ -119,12 +119,8 @@ fn compile_expr(expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> Compi
         Expr::Call(func, exprs) => {
             compile_call(func, exprs, env, ptr, scope)
         },
-        Expr::Assign(v, e) => {
+        Expr::Assign(var, e) => {
             let (mut code, mut ptr, mut allocs) = compile_expr(*e, env, ptr, scope)?;
-            let var = match *v {
-                Expr::Var(var) => var,
-                _ => return Err(CompileError::UndefinedAssignment)
-            };
 
             let loc = match env.get(&var) {
                 Some(l) => {
