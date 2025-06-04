@@ -51,7 +51,7 @@ pub enum Pass<'a, T> {
 pub struct Run<'a> {
     dist: usize,
     input: Tokens<'a>,
-    pub context: Context
+    context: Context
 }
 
 impl<'a> Run<'a> {
@@ -77,6 +77,11 @@ impl<'a> Run<'a> {
             }
         )
     }
+
+    pub fn context(&self) -> &Context {
+        &self.context
+    }
+
 
     pub fn dist(&self) -> usize {
         self.dist
@@ -184,7 +189,7 @@ impl<'a> Run<'a> {
         Pass::None(self)
     }
 
-    pub fn update_context(self, map: impl Fn(Context) -> Context) -> Run<'a> {
+    pub fn update_context(self, map: impl FnOnce(Context) -> Context) -> Run<'a> {
         Run { 
             dist: self.dist, 
             input: self.input, 

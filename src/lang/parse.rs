@@ -1,6 +1,6 @@
 use std::clone;
 
-use super::{ast::{Entry, Expr, Program, Stmt}, lex::{Token, Tokens}, run::{Contains, Pass, Run}, Context, Marker, Markers};
+use super::{ast::{Entry, Expr, Program, Stmt}, lex::{Token, Tokens}, run::{Contains, Pass, Run}, Context, Marker, Markers, Scope};
 
 fn mark_as_whitespace_or_unexpected_token<'a, F>(tokens: Tokens<'a>, token: Token<'a>, mark: F) -> Markers<'a>
 where
@@ -150,7 +150,7 @@ pub trait Parser<'a, T> {
         }
     }
 
-    fn update_context(self, map: impl Fn(T, Context) -> Context) -> impl Parser<'a, T>
+    fn update_context(self, map: impl Fn(&T, Context) -> Context) -> impl Parser<'a, T>
     where
         T: Clone,
         Self: Sized
@@ -159,9 +159,9 @@ pub trait Parser<'a, T> {
             match self.parse(run, deny) {
                 ParseResult::Error => ParseResult::Error,
                 ParseResult::Success(val, markers, run) => {
-                    let run = run.update_context(|ctx: Context| {
-                        map(val.clone(), ctx)
-                    });
+                    let run = run.update_context(
+                        |ctx| map(&val, ctx)
+                    );
 
                     ParseResult::Success(val, markers, run)
                 }
@@ -178,7 +178,7 @@ pub trait Parser<'a, T> {
             match self.parse(run, deny) {
                 ParseResult::Error => ParseResult::Error,
                 ParseResult::Success(val, markers, run) => {
-                    if pred(val.clone(), &run.context) {
+                    if pred(val.clone(), run.context()) {
                         return ParseResult::Success(val, markers, run)
                     }
 
@@ -525,9 +525,9 @@ pub fn parse_expr_primary<'a>() -> impl Parser<'a, Expr> {
                 seperated_by(parse_expr(), Token::Comma)
             ),
             |id, args| (id, args)
-        ).check_context(|(id, args), ctx| {
-            ctx.functions.contains(&(id.to_string(), args.len()))
-        }).map(|(id, args)| {
+        ).check_context(
+            |(id, args), ctx| ctx.is_known_function(id, args.len())
+        ).map(|(id, args)| {
             let id = id.to_string();
             Expr::Call(id, args)
         }).parse(run, deny)
@@ -537,9 +537,9 @@ pub fn parse_expr_primary<'a>() -> impl Parser<'a, Expr> {
         expect_some(
             Token::identifier,
             |id, _| Marker::Identifier(id)
-        ).check_context(|id, ctx| {
-            ctx.variables.contains_key(id)
-        }).map(|id| {
+        ).check_context(
+            |id, ctx| ctx.is_known_variable(id).is_some()
+        ).map(|id| {
             let id = id.to_string();
             Expr::Var(id)
         }).parse(run, deny)
@@ -632,15 +632,7 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
                 prec
             };
 
-            let rhs = parse_expr_1(new_min_prec).check_context(|expr, ctx| {
-                if let Expr::Var(var) = expr {
-                    ctx.variables.contains_key(&var)
-                } else {
-                    true 
-                }
-            });
-
-            let rhs = match rhs.parse(run.clone(), deny.clone()) {
+            let rhs = match parse_expr_1(new_min_prec).parse(run.clone(), deny.clone()) {
                 ParseResult::Error => break,
                 ParseResult::Success(rhs, mut fs, next) => {
                     markers.append(&mut fs);
@@ -681,15 +673,12 @@ pub fn parse_expr<'a>() -> impl Parser<'a, Expr> {
                 expect(Token::Assign, Marker::Plain),
                 parse_expr(),
             ),
-            |var, expr| (var.to_string(), expr)
-        ).update_context(|(var, _), ctx| {
-            let mut variables = ctx.variables;
-            variables.insert(var.clone(), ctx.scope);
-
-            Context { variables: variables, functions: ctx.functions, scope: ctx.scope }
-        }).map(|(var, expr)| {
-            Expr::Assign(var, Box::new(expr))
-        }).parse(run, deny)
+            |var, expr| (var.to_string(), Box::new(expr))
+        ).update_context(
+            |(var, _), ctx| ctx.register_variable(var)
+        ).map(
+            |(var, expr)| Expr::Assign(var, expr)
+        ).parse(run, deny)
     };
     
     let any_expr_parser = |run: Run<'a>, deny: Deny<'a>| {
@@ -702,30 +691,32 @@ pub fn parse_expr<'a>() -> impl Parser<'a, Expr> {
     ])
 }
 
-fn parse_stmt_block<'a>() -> impl Parser<'a, Stmt> {
+fn parse_stmt_scope<'a>() -> impl Parser<'a, Stmt> {
     // implements scope drop
     |run: Run<'a>, deny: Deny<'a>| {
-        let origin = run.context.clone();
+        let origin = run.context().clone();
 
-        let parser = second(
-            expect(Token::LeftBrace, Marker::Plain).update_context(|_, ctx| {
-                Context { 
-                    variables: ctx.variables, 
-                    functions: ctx.functions, 
-                    scope: super::Scope::Local 
-                }
-            }),
-            first(
-                many(parse_stmt()).deny(Token::RightBrace).map(Stmt::Scope),
-                expect(Token::RightBrace, Marker::Plain),
-            )        
+        let run = run.update_context(
+            |ctx| ctx.set_scope(Scope::Local)
         );
-        
+
+        let parser = wrapped(
+            Token::LeftBrace, 
+            Token::RightBrace, 
+            many(
+                parse_stmt()
+            ).map(Stmt::Scope)
+        );
+
         match parser.parse(run, deny) {
             ParseResult::Error => ParseResult::Error,
-            ParseResult::Success(result, markers, next) => {
-                ParseResult::Success(result, markers, next.update_context(|_| origin.clone()))
-            }
+            ParseResult::Success(result, markers, run) => {
+                let run = run.update_context(
+                    |_| origin
+                );
+
+                ParseResult::Success(result, markers, run)
+            }    
         }
     }
 }
@@ -758,7 +749,7 @@ pub fn parse_stmt_if<'a>() -> impl Parser<'a, Stmt> {
         expect(Token::If, Marker::Keyword),
         combine(
             parse_expr().deny(Token::LeftBrace),
-            parse_stmt_block().deny(Token::Else),
+            parse_stmt_scope().deny(Token::Else),
             |expr, stmt| (expr, stmt)
         ),
     );
@@ -774,7 +765,7 @@ pub fn parse_stmt_if<'a>() -> impl Parser<'a, Stmt> {
 
         let markers = mark_as_whitespace_or_unexpected_token(span.tail(), Token::Else, Marker::Keyword);
 
-        match parse_stmt_block().parse(span.next(), deny) {
+        match parse_stmt_scope().parse(span.next(), deny) {
             ParseResult::Error => ParseResult::Error,
             ParseResult::Success(stmt, stmt_markers, next) => {
                 ParseResult::Success(Some(stmt), [markers, stmt_markers].concat(), next)
@@ -800,7 +791,7 @@ fn parse_stmt_while<'a>() -> impl Parser<'a, Stmt> {
         expect(Token::While, Marker::Keyword),
         combine(
             parse_expr().deny(Token::LeftBrace),
-            parse_stmt_block().map(Box::new),
+            parse_stmt_scope().map(Box::new),
             Stmt::While
         ),
     )
@@ -845,7 +836,7 @@ fn parse_stmt<'a>() -> impl Parser<'a, Stmt> {
             Token::Number(_) => parse_stmt_expr().parse(span.next(), deny),
             Token::Identifier(_) => parse_stmt_expr().parse(span.next(), deny),
             Token::LeftParen => parse_stmt_expr().parse(span.next(), deny),
-            Token::LeftBrace => parse_stmt_block().parse(span.next(), deny),
+            Token::LeftBrace => parse_stmt_scope().parse(span.next(), deny),
             Token::If => parse_stmt_if().parse(span.next(), deny),
             Token::While => parse_stmt_while().parse(span.next(), deny),
             Token::Forward => parse_stmt_move().parse(span.next(), deny),
@@ -875,7 +866,7 @@ pub fn parse_func<'a>() -> impl Parser<'a, Entry> {
         )
     );
 
-    let header_parser = combine(
+    let header_parser = second(
         expect(Token::Func, Marker::Keyword),
         combine(
             expect_some(
@@ -885,27 +876,13 @@ pub fn parse_func<'a>() -> impl Parser<'a, Entry> {
             params_parser,
             |name, params| (name, params)
         ),
-        |_, header| header
-    ).update_context(|(func, vars), ctx| {
-        let mut variables = ctx.variables;
-        let mut functions = ctx.functions;
-        
-        functions.insert((func.to_string(), vars.len()));
-
-        for var in vars {
-            variables.insert(var.to_string(), super::Scope::Local);
-        }
-
-        Context {
-            variables,
-            functions,
-            scope: ctx.scope,
-        }
-    });
+    ).update_context(
+        |(func, args), ctx| ctx.register_function(*func, args.clone())
+    );
 
     combine(
         header_parser,
-        parse_stmt_block(),
+        parse_stmt_scope(),
         |header, body| {
             let (name, params) = header;
             let params = params.iter().map(|&s| s.to_string()).collect();

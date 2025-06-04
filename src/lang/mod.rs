@@ -7,7 +7,7 @@ mod compile;
 pub use ast::*;
 pub use lex::{Lexer, Token};
 pub use compile::{compile};
-pub use run::Run;
+pub use run::{Run, Pass};
 
 use parse::ParseResult;
 use parse::{Deny, Parser};
