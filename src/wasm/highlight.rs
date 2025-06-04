@@ -53,7 +53,7 @@ fn token_to_string(token: Token) -> String {
         Token::Undefined(str) => str.to_string(),
         Token::True => "true".to_string(),
         Token::False => "false".to_string(),
-        token => unreachable!("uexpected token: \"{:?}\"", token)
+        token => unreachable!("unexpected token: \"{:?}\"", token)
     }
 }
 

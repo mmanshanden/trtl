@@ -25,20 +25,63 @@ impl<'a> Span<'a> {
         self.tokens
     }
 
-    pub fn tail(&self) -> Tokens<'a> {
-        &self.tokens[..self.tokens.len() - 1]
+    pub fn init(&self) -> Tokens<'a> {
+        if self.tokens.len() > 1 {
+            &self.tokens[..self.tokens.len() - 1]
+        } else {
+            &[]
+        }
     }
 
-    pub fn head(&self) -> Token<'a> {
-        self.tokens[self.tokens.len() - 1]
+    pub fn last(&self) -> Option<Token<'a>> {
+        self.tokens.get(self.tokens.len() - 1).copied()
     }
 
-    pub fn peek(&self) -> &'a Token<'a> {
-        self.next.input.get(0).unwrap_or(&Token::Eof)
+    pub fn peek(&self) -> Option<&'a Token<'a>> {
+        self.next.input.get(0)
     }
 
     pub fn next(self) -> Run<'a> {
         self.next
+    }
+
+    pub fn dissect_init<Pred, MapTrue, MapFalse, Append, T>(&self, pred: Pred, map_true: MapTrue, map_false: MapFalse, append: Append) -> Vec<T> 
+    where
+        Pred: Fn(&'a Token<'a>) -> bool,
+        MapTrue: Fn(Token<'a>) -> T,
+        MapFalse: Fn(Tokens<'a>) -> T,
+        Append: Fn(Token<'a>) -> T
+    {
+        let mut result = Vec::new();
+        let mut i = 0;
+
+        while i < self.init().len() {
+            if pred(&self.tokens[i]) {
+                result.push(map_true(self.tokens[i]));
+                i += 1;
+                continue;
+            }
+
+            let mut j = i + 1;
+
+            while j < self.init().len() {
+                if pred(&self.tokens[j]) {
+                    break;
+                }
+
+                j += 1;
+            }
+
+            result.push(map_false(&self.tokens[i..j]));
+
+            i = j;
+        }
+
+        if let Some(marker) = self.last().map(append) {
+            result.push(marker);
+        }
+
+        result
     }
 }
 
@@ -51,7 +94,7 @@ pub enum Pass<'a, T> {
 pub struct Run<'a> {
     dist: usize,
     input: Tokens<'a>,
-    pub context: Context
+    context: Context
 }
 
 impl<'a> Run<'a> {
@@ -77,6 +120,11 @@ impl<'a> Run<'a> {
             }
         )
     }
+
+    pub fn context(&self) -> &Context {
+        &self.context
+    }
+
 
     pub fn dist(&self) -> usize {
         self.dist
@@ -184,7 +232,7 @@ impl<'a> Run<'a> {
         Pass::None(self)
     }
 
-    pub fn update_context(self, map: impl Fn(Context) -> Context) -> Run<'a> {
+    pub fn update_context(self, map: impl FnOnce(Context) -> Context) -> Run<'a> {
         Run { 
             dist: self.dist, 
             input: self.input, 

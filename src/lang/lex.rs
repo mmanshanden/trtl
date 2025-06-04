@@ -76,6 +76,15 @@ impl<'a> Token<'a> {
             _ => 1,
         }
     }
+
+    pub fn is_whitespace(&self) -> bool {
+        match self {
+            Self::Whitespace(_) => true,
+            Self::Comment(_) => true,
+            Self::LineBreak => true,
+            _ => false
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

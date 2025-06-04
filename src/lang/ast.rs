@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, fmt::Debug};
+use std::{collections::{HashMap, HashSet}};
 
 use super::{lex::Tokens, Token};
 
@@ -52,19 +52,62 @@ pub enum Scope {
 
 #[derive(Debug, Clone)]
 pub struct Context {
-    pub variables: HashMap<String, Scope>,
-    pub functions: HashSet<(String, usize)>,
-    pub scope: Scope
+    variables: HashMap<String, Scope>,
+    functions: HashSet<(String, usize)>,
+    scope: Scope
 }
 
 impl Context {
     pub fn new() -> Context {
-        return Self {
+        Self {
             variables: HashMap::new(),
             functions: HashSet::new(),
             scope: Scope::Global
-        };
+        }
     }
+
+    pub fn set_scope(self, scope: Scope) -> Self {
+        Self {
+            variables: self.variables,
+            functions: self.functions,
+            scope: scope
+        }
+    }
+
+    pub fn register_variable(mut self, variable: impl Into<String>) -> Self {
+        self.variables.insert(variable.into(), self.scope);
+        
+        Self {
+            variables: self.variables,
+            functions: self.functions,
+            scope: self.scope
+        }
+    }
+
+    pub fn register_function(mut self, function: impl Into<String>, args: Vec<impl Into<String>>) -> Self {
+        self.functions.insert((function.into(), args.len()));
+
+        for arg in args {
+            self.variables.insert(arg.into(), Scope::Local);
+        }
+
+
+        Self {
+            variables: self.variables,
+            functions: self.functions,
+            scope: self.scope
+        }
+    }
+
+    pub fn is_known_variable(&self, variable: impl Into<String>) -> Option<&Scope> {
+        let variable = variable.into();
+        return self.variables.get(&variable);
+    }
+
+    pub fn is_known_function(&self, function_name: impl Into<String>, arg_count: usize) -> bool {
+        let function_name = function_name.into();
+        return self.functions.contains(&(function_name, arg_count));
+    } 
 }
 
 
