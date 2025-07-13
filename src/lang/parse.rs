@@ -1,21 +1,43 @@
-use super::{ast::{Entry, Expr, Program, Stmt}, lex::{Token, Tokens}, run::{Contains, Pass, Run}, Context, Marker, Markers, Scope};
+use super::{
+    Context, Marker, Markers, Scope,
+    ast::{Entry, Expr, Program, Stmt},
+    lex::{Token, Tokens},
+    run::{Contains, ReadResult, Run},
+};
 
+#[derive(Debug, Clone)]
+pub enum Deny<'a> {
+    Cons(Token<'a>, Box<Deny<'a>>),
+    Nil,
+}
 
-pub type Deny<'a> = Vec<Token<'a>>;
+impl<'a> Deny<'a> {
+    pub fn new() -> Self {
+        Deny::Nil
+    }
+
+    pub fn insert(self, token: Token<'a>) -> Self {
+        Self::Cons(token, Box::new(self))
+    }
+}
 
 impl<'a> Contains<'a> for Deny<'a> {
     fn contains(&self, token: &'a Token<'a>) -> bool {
-        self.iter().any(|t| t == token)
+        match self {
+            Deny::Cons(value, tail) => token == value || tail.contains(token),
+            Deny::Nil => false,
+        }
     }
 }
 
 impl<'a> Contains<'a> for &Deny<'a> {
     fn contains(&self, token: &'a Token<'a>) -> bool {
-        self.iter().any(|t| t == token)
+        match self {
+            Deny::Cons(value, tail) => token == value || tail.contains(token),
+            Deny::Nil => false,
+        }
     }
 }
-
-
 
 #[derive(Debug, Clone)]
 pub enum ParseResult<'a, T> {
@@ -61,19 +83,20 @@ impl<'a, T> ParseResult<'a, T> {
 
     pub fn map<U>(self, map: impl Fn(T) -> U) -> ParseResult<'a, U> {
         match self {
-            Self::Success(value, fragments, run) => ParseResult::Success(map(value), fragments, run),
+            Self::Success(value, fragments, run) => {
+                ParseResult::Success(map(value), fragments, run)
+            }
             Self::Error => ParseResult::Error,
         }
     }
 }
-
 
 pub trait Parser<'a, T> {
     fn parse(&self, run: Run<'a>, deny: Deny<'a>) -> ParseResult<'a, T>;
 
     fn map<U>(self, map: impl Fn(T) -> U) -> impl Parser<'a, U>
     where
-        Self: Sized 
+        Self: Sized,
     {
         move |run: Run<'a>, deny: Deny<'a>| {
             let (value, markers, run) = match self.parse(run, deny) {
@@ -85,75 +108,35 @@ pub trait Parser<'a, T> {
         }
     }
 
-    fn optional(self) -> impl Parser<'a, Option<T>> 
+    fn optional(self) -> impl Parser<'a, Option<T>>
     where
-        Self: Sized 
+        Self: Sized,
     {
-        move |run: Run<'a>, deny: Deny<'a>| {
-            match self.parse(run.clone(), deny) {
-                ParseResult::Success(value, markers, run) => ParseResult::Success(Some(value), markers, run),
-                ParseResult::Error => ParseResult::Success(None, vec![], run)
+        move |run: Run<'a>, deny: Deny<'a>| match self.parse(run.clone(), deny) {
+            ParseResult::Success(value, markers, run) => {
+                ParseResult::Success(Some(value), markers, run)
             }
+            ParseResult::Error => ParseResult::Success(None, vec![], run),
         }
     }
 
-    fn deny(self, deny: Token<'a>) -> impl Parser<'a, T> 
+    fn deny(self, deny: Token<'a>) -> impl Parser<'a, T>
     where
-        Self: Sized 
+        Self: Sized,
     {
         move |run: Run<'a>, parent: Deny<'a>| {
-            let deny = vec![deny];
-            let deny = [deny, parent].concat();
+            let deny = Deny::Cons(deny, Box::new(parent));
             self.parse(run, deny)
         }
     }
 
-    fn update_context(self, map: impl Fn(&T, Context) -> Context) -> impl Parser<'a, T>
-    where
-        T: Clone,
-        Self: Sized
-    {
-        move |run: Run<'a>, deny: Deny<'a>| {
-            match self.parse(run, deny) {
-                ParseResult::Error => ParseResult::Error,
-                ParseResult::Success(val, markers, run) => {
-                    let run = run.update_context(
-                        |ctx| map(&val, ctx)
-                    );
-
-                    ParseResult::Success(val, markers, run)
-                }
-            }
-        }
-    }
-
-    fn check_context(self, pred: impl Fn(T, &Context) -> bool) -> impl Parser<'a, T>
-    where
-        T: Clone,
-        Self: Sized
-    {
-        move |run: Run<'a>, deny: Deny<'a>| {
-            match self.parse(run, deny) {
-                ParseResult::Error => ParseResult::Error,
-                ParseResult::Success(val, markers, run) => {
-                    if pred(val.clone(), run.context()) {
-                        return ParseResult::Success(val, markers, run)
-                    }
-
-                    return ParseResult::Error;
-                }
-            }
-        }
-    }
-
     fn debug(self, name: &'static str) -> impl Parser<'a, T>
-    where 
-        Self: Sized
+    where
+        Self: Sized,
     {
         move |run: Run<'a>, deny: Deny<'a>| {
-
             // println!(format!("[{}] [RUN] {:?} deny: {:?}", name, run, deny));
-            
+
             let result = self.parse(run, deny);
 
             if result.is_err() {
@@ -169,14 +152,13 @@ pub trait Parser<'a, T> {
 }
 
 impl<'a, T, F> Parser<'a, T> for F
-where   
-    F: Fn(Run<'a>, Deny<'a>) -> ParseResult<'a, T>
+where
+    F: Fn(Run<'a>, Deny<'a>) -> ParseResult<'a, T>,
 {
     fn parse(&self, run: Run<'a>, deny: Deny<'a>) -> ParseResult<'a, T> {
         self(run, deny)
     }
 }
-
 
 fn expect<'a, U>(expect: Token<'static>, mark: U) -> impl Parser<'a, ()>
 where
@@ -184,70 +166,68 @@ where
 {
     let parser = expect_pred(move |&t| t == expect, mark);
 
-    move |run: Run<'a>, deny: Deny<'a>| {
-        match parser.parse(run, deny) {
-            ParseResult::Success(_, markers, run) => ParseResult::Success((), markers, run),
-            ParseResult::Error => ParseResult::Error,
-        }
+    move |run: Run<'a>, deny: Deny<'a>| match parser.parse(run, deny) {
+        ParseResult::Success(_, markers, run) => ParseResult::Success((), markers, run),
+        ParseResult::Error => ParseResult::Error,
     }
 }
-
 
 fn expect_pred<'a, U>(pred: impl Fn(&'a Token<'a>) -> bool, mark: U) -> impl Parser<'a, Token<'a>>
 where
     U: Fn(Token<'a>) -> Marker<'a>,
 {
     move |run: Run<'a>, deny: Deny<'a>| {
-        let span = match run.first_where(&pred, deny) {
-            Pass::None(_) => return ParseResult::Error,
-            Pass::Some(_, span) => span
-        }; 
+        let span = match run.first_where(&pred, &deny) {
+            ReadResult::None(_) => return ParseResult::Error,
+            ReadResult::Some(_, span) => span,
+        };
 
-        let markers = span.dissect_init(
-            Token::is_whitespace, 
+        let markers = span.dissect(
+            Token::is_whitespace,
             |t| match t {
                 Token::Whitespace(ws) => Marker::Whitespace(ws),
                 Token::Comment(cmt) => Marker::Comment(cmt),
                 Token::LineBreak => Marker::LineBreak,
-                _ => unreachable!()
+                _ => unreachable!(),
             },
-            |t| Marker::UnexpectedToken { expected: span.last().unwrap(), actual: t },
-            &mark
+            |t| Marker::UnexpectedToken {
+                expected: span.last().unwrap(),
+                actual: t,
+            },
+            &mark,
         );
 
-        ParseResult::Success(
-            span.last().unwrap(), 
-            markers, 
-            span.next()
-        )
+        ParseResult::Success(span.last().unwrap(), markers, span.next())
     }
 }
 
-
 fn expect_next<'a, U>(expect: Token<'static>, mark: U) -> impl Parser<'a, ()>
 where
-    U: Fn(Token<'a>) -> Marker<'a>
+    U: Fn(Token<'a>) -> Marker<'a>,
 {
-    move |run: Run<'a>, _: Deny<'a>| {
+    move |run: Run<'a>, deny: Deny<'a>| {
         let span = match run.next_pass(|t: &Token| t.dist() > 0) {
-            Pass::None(_) => return ParseResult::Error,
-            Pass::Some(_, span) => span,
+            ReadResult::None(_) => return ParseResult::Error,
+            ReadResult::Some(_, span) => span,
         };
 
         if span.last() != Some(expect) {
             return ParseResult::Error;
         }
 
-        let markers = span.dissect_init(
-            Token::is_whitespace, 
+        let markers = span.dissect(
+            Token::is_whitespace,
             |t| match t {
                 Token::Whitespace(ws) => Marker::Whitespace(ws),
                 Token::Comment(cmt) => Marker::Comment(cmt),
                 Token::LineBreak => Marker::LineBreak,
-                _ => unreachable!()
+                _ => unreachable!(),
             },
-            |t| Marker::UnexpectedToken { expected: span.last().unwrap(), actual: t },
-            &mark
+            |t| Marker::UnexpectedToken {
+                expected: span.last().unwrap(),
+                actual: t,
+            },
+            &mark,
         );
 
         ParseResult::Success((), markers, span.next())
@@ -261,30 +241,33 @@ where
     U: Fn(T, Token<'a>) -> Marker<'a>,
 {
     move |run: Run<'a>, deny: Deny<'a>| {
-        let (val, span) = match run.first_where_some(&expect, deny) {
-            Pass::None(_) => return ParseResult::Error,
-            Pass::Some(val, span) => (val, span)
+        let (val, span) = match run.first_where_some(&expect, &deny) {
+            ReadResult::None(_) => return ParseResult::Error,
+            ReadResult::Some(val, span) => (val, span),
         };
 
-        let markers = span.dissect_init(
-            Token::is_whitespace, 
+        let markers = span.dissect(
+            Token::is_whitespace,
             |t| match t {
                 Token::Whitespace(ws) => Marker::Whitespace(ws),
                 Token::Comment(cmt) => Marker::Comment(cmt),
                 Token::LineBreak => Marker::LineBreak,
-                _ => unreachable!()
+                _ => unreachable!(),
             },
-            |t| Marker::UnexpectedToken { expected: span.last().unwrap(), actual: t },
-            |t| mark(val.clone(), t)
+            |t| Marker::UnexpectedToken {
+                expected: span.last().unwrap(),
+                actual: t,
+            },
+            |t| mark(val.clone(), t),
         );
 
         ParseResult::Success(val, markers, span.next())
     }
 }
 
-fn choice<'a, P, T>(parsers: Vec<P>) -> impl Parser<'a, T> 
-where 
-    P: Parser<'a, T> 
+fn choice<'a, P, T>(parsers: Vec<P>) -> impl Parser<'a, T>
+where
+    P: Parser<'a, T>,
 {
     move |run: Run<'a>, deny: Deny<'a>| {
         let mut best = ParseResult::Error;
@@ -305,7 +288,7 @@ where
                 break;
             }
 
-            if best.is_err() { 
+            if best.is_err() {
                 best = ParseResult::Success(value, markers, next);
                 continue;
             }
@@ -325,7 +308,7 @@ where
     }
 }
 
-fn combine<'a, A, B, P, Q, T, F>(first: P, second: Q, combine: F) -> impl Parser<'a, T> 
+fn combine<'a, A, B, P, Q, T, F>(first: P, second: Q, combine: F) -> impl Parser<'a, T>
 where
     P: Parser<'a, A>,
     Q: Parser<'a, B>,
@@ -337,7 +320,7 @@ where
             ParseResult::Error => return ParseResult::Error,
         };
 
-        let (value2, markers2, run) = match second.parse(run.clone(), deny.clone()) {
+        let (value2, markers2, run) = match second.parse(run.clone(), deny) {
             ParseResult::Success(value, markers, run) => (value, markers, run),
             ParseResult::Error => return ParseResult::Error,
         };
@@ -349,7 +332,7 @@ where
     }
 }
 
-fn first<'a, A, B, P, Q>(first: P, second: Q) -> impl Parser<'a, A> 
+fn first<'a, A, B, P, Q>(first: P, second: Q) -> impl Parser<'a, A>
 where
     P: Parser<'a, A>,
     Q: Parser<'a, B>,
@@ -371,8 +354,7 @@ where
     }
 }
 
-
-fn second<'a, A, B, P, Q>(first: P, second: Q) -> impl Parser<'a, B> 
+fn second<'a, A, B, P, Q>(first: P, second: Q) -> impl Parser<'a, B>
 where
     P: Parser<'a, A>,
     Q: Parser<'a, B>,
@@ -394,7 +376,7 @@ where
     }
 }
 
-fn many<'a, P, T>(parser: P) -> impl Parser<'a, Vec<T>> 
+fn many<'a, P, T>(parser: P) -> impl Parser<'a, Vec<T>>
 where
     P: Parser<'a, T>,
 {
@@ -407,7 +389,7 @@ where
             let inner_run = run.clone();
             let inner_deny = deny.clone();
 
-            let (value, ts, next) = match  parser.parse(inner_run, inner_deny) {
+            let (value, ts, next) = match parser.parse(inner_run, inner_deny) {
                 ParseResult::Success(value, markers, run) => (value, markers, run),
                 ParseResult::Error => break,
             };
@@ -421,50 +403,49 @@ where
     }
 }
 
-fn wrapped<'a, T>(before: Token<'static>, after: Token<'static>, body: impl Parser<'a, T>) -> impl Parser<'a, T> {
+fn wrapped<'a, T>(
+    before: Token<'static>,
+    after: Token<'static>,
+    body: impl Parser<'a, T>,
+) -> impl Parser<'a, T> {
     second(
         expect(before, Marker::Plain),
-        first(
-            body.deny(after),
-            expect(after, Marker::Plain),
-        ),
+        first(body.deny(after), expect(after, Marker::Plain)),
     )
 }
 
-fn wrapped_attached<'a, T>(before: Token<'static>, after: Token<'static>, body: impl Parser<'a, T>) -> impl Parser<'a, T> {
+fn wrapped_attached<'a, T>(
+    before: Token<'static>,
+    after: Token<'static>,
+    body: impl Parser<'a, T>,
+) -> impl Parser<'a, T> {
     second(
         expect_next(before, Marker::Plain),
-        first(
-            body.deny(after),
-            expect(after, Marker::Plain),
-        ),
+        first(body.deny(after), expect(after, Marker::Plain)),
     )
 }
 
-
-fn seperated_by<'a, T>(parser: impl Parser<'a, T>, separator: Token<'static>) -> impl Parser<'a, Vec<T>> {
+pub fn seperated_by<'a, T>(
+    parser: impl Parser<'a, T>,
+    separator: Token<'static>,
+) -> impl Parser<'a, Vec<T>> {
     let parser = parser.deny(separator);
 
     move |run: Run<'a>, deny: Deny<'a>| {
-
         // parse the first element
         let first_element = parser.parse(run.clone(), deny.clone());
 
         let (mut values, mut markers, mut run) = match first_element {
-            ParseResult::Error => {
-                return ParseResult::Success(Vec::new(), Vec::new(), run)
-            },
-            ParseResult::Success(value, markers, run) => {
-                (vec![value], markers, run)
-            }
+            ParseResult::Error => return ParseResult::Success(Vec::new(), Vec::new(), run),
+            ParseResult::Success(value, markers, run) => (vec![value], markers, run),
         };
 
         loop {
             // parse the separator
             match expect(separator, Marker::Plain).parse(run.clone(), deny.clone()) {
-                ParseResult::Error => { 
+                ParseResult::Error => {
                     break;
-                },
+                }
                 ParseResult::Success(_, mut ts, next) => {
                     markers.append(&mut ts);
                     run = next;
@@ -473,9 +454,9 @@ fn seperated_by<'a, T>(parser: impl Parser<'a, T>, separator: Token<'static>) ->
 
             // parse the next element
             match parser.parse(run.clone(), deny.clone()) {
-                ParseResult::Error => { 
+                ParseResult::Error => {
                     break;
-                },
+                }
                 ParseResult::Success(value, mut ts, next) => {
                     values.push(value);
                     markers.append(&mut ts);
@@ -488,48 +469,14 @@ fn seperated_by<'a, T>(parser: impl Parser<'a, T>, separator: Token<'static>) ->
     }
 }
 
-pub fn parse_expr_known_variable<'a>() -> impl Parser<'a, Expr> {
-    let is_known_variable = |run: &Run<'a>, token: &'a Token<'a>| {
-        if let Token::Identifier(variable) = token {
-            if run.context().is_known_variable(*variable).is_some() {
-                    return Some(variable)
-            }
-        }
-
-        None
-    };
-
-    move |run: Run<'a>, deny: Deny<'a>| {
-        let (variable, span) = match run.clone().first_where_some(|t| is_known_variable(&run, t), deny) {
-            Pass::None(_) => return ParseResult::Error,
-            Pass::Some(val, span) => (val, span)
-        };
-
-        let markers = span.dissect_init(
-            Token::is_whitespace, 
-            |t| match t {
-                Token::Whitespace(ws) => Marker::Whitespace(ws),
-                Token::Comment(cmt) => Marker::Comment(cmt),
-                Token::LineBreak => Marker::LineBreak,
-                _ => unreachable!()
-            },
-            |t| Marker::UnexpectedToken { expected: span.last().unwrap(), actual: t },
-            |_| Marker::Identifier(&variable)
-        );
-
-        let var = variable.to_string();
-        let var = Expr::Var(var);
-
-        ParseResult::Success(var, markers, span.next())
-    }
-}
-
 pub fn parse_expr_primary<'a>() -> impl Parser<'a, Expr> {
     let number_parser = |run: Run<'a>, deny: Deny<'a>| {
-        expect_some(Token::number, |number, _| Marker::Number(number)).map(|number| {
-            let number = number.parse().unwrap();
-            Expr::Num(number)
-        }).parse(run, deny)
+        expect_some(Token::number, |number, _| Marker::Number(number))
+            .map(|number| {
+                let number = number.parse().unwrap();
+                Expr::Num(number)
+            })
+            .parse(run, deny)
     };
 
     let func_call_parser = |run: Run<'a>, deny: Deny<'a>| {
@@ -538,35 +485,28 @@ pub fn parse_expr_primary<'a>() -> impl Parser<'a, Expr> {
             wrapped_attached(
                 Token::LeftParen,
                 Token::RightParen,
-                seperated_by(parse_expr(), Token::Comma)
+                seperated_by(parse_expr(), Token::Comma),
             ),
-            |id, args| (id, args)
-        ).check_context(
-            |(id, args), ctx| ctx.is_known_function(id, args.len())
-        ).map(|(id, args)| {
+            |id, args| (id, args),
+        )
+        .map(|(id, args)| {
             let id = id.to_string();
             Expr::Call(id, args)
-        }).parse(run, deny)
+        })
+        .parse(run, deny)
     };
 
     let identifier_parser = |run: Run<'a>, deny: Deny<'a>| {
-        expect_some(
-            Token::identifier,
-            |id, _| Marker::Identifier(id)
-        ).check_context(
-            |id, ctx| ctx.is_known_variable(id).is_some()
-        ).map(|id| {
-            let id = id.to_string();
-            Expr::Var(id)
-        }).parse(run, deny)
+        expect_some(Token::identifier, |id, _| Marker::Identifier(id))
+            .map(|id| {
+                let id = id.to_string();
+                Expr::Var(id)
+            })
+            .parse(run, deny)
     };
 
     let sub_expr_parser = |run: Run<'a>, deny: Deny<'a>| {
-        wrapped(
-            Token::LeftParen, 
-            Token::RightParen, 
-            parse_expr()
-        ).parse(run, deny)
+        wrapped(Token::LeftParen, Token::RightParen, parse_expr()).parse(run, deny)
     };
 
     choice(vec![
@@ -597,12 +537,11 @@ enum Operation {
     Divide,
 }
 
-
 /// The recurrent case for a given minimum precedence level
-/// 
+///
 /// See: https://eli.thegreenplace.net/2012/08/02/parsing-expressions-by-precedence-climbing
 ///
-fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
+fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr> {
     move |run: Run<'a>, deny: Deny<'a>| {
         let (mut lhs, mut markers, mut run) = match parse_expr_primary().parse(run, deny.clone()) {
             ParseResult::Success(expr, fs, next) => (expr, fs, next),
@@ -681,58 +620,32 @@ fn parse_expr_1<'a>(min_prec: u8) -> impl Parser<'a, Expr>{
 pub fn parse_expr<'a>() -> impl Parser<'a, Expr> {
     let assignment_parser = |run: Run<'a>, deny: Deny<'a>| {
         combine(
-            expect_some(
-                Token::identifier,
-                |var, _| Marker::Identifier(var)
-            ),
-            second(
-                expect(Token::Assign, Marker::Plain),
-                parse_expr(),
-            ),
-            |var, expr| (var.to_string(), Box::new(expr))
-        ).update_context(
-            |(var, _), ctx| ctx.register_variable(var)
-        ).map(
-            |(var, expr)| Expr::Assign(var, expr)
-        ).parse(run, deny)
-    };
-    
-    let any_expr_parser = |run: Run<'a>, deny: Deny<'a>| {
-        parse_expr_1(0).parse(run, deny)
+            expect_some(Token::identifier, |var, _| Marker::Identifier(var)),
+            second(expect(Token::Assign, Marker::Plain), parse_expr()),
+            |var, expr| (var.to_string(), Box::new(expr)),
+        )
+        .map(|(var, expr)| Expr::Assign(var, expr))
+        .parse(run, deny)
     };
 
-    choice(vec![
-        assignment_parser,
-        any_expr_parser
-    ])
+    let any_expr_parser = |run: Run<'a>, deny: Deny<'a>| parse_expr_1(0).parse(run, deny);
+
+    choice(vec![assignment_parser, any_expr_parser])
 }
 
 fn parse_stmt_scope<'a>() -> impl Parser<'a, Stmt> {
-    // implements scope drop
     |run: Run<'a>, deny: Deny<'a>| {
-        let origin = run.context().clone();
-
-        let run = run.update_context(
-            |ctx| ctx.set_scope(Scope::Local)
-        );
-
         let parser = wrapped(
-            Token::LeftBrace, 
-            Token::RightBrace, 
-            many(
-                parse_stmt()
-            ).map(Stmt::Scope)
+            Token::LeftBrace,
+            Token::RightBrace,
+            many(parse_stmt()).map(Stmt::Scope),
         );
 
         match parser.parse(run, deny) {
             ParseResult::Error => ParseResult::Error,
             ParseResult::Success(result, markers, run) => {
-                let run = run.update_context(
-                    |_| origin
-                );
-
                 ParseResult::Success(result, markers, run)
-            }    
+            }
         }
     }
 }
@@ -740,13 +653,16 @@ fn parse_stmt_scope<'a>() -> impl Parser<'a, Stmt> {
 fn parse_stmt_expr<'a>() -> impl Parser<'a, Stmt> {
     first(
         parse_expr().deny(Token::SemiColon).map(Stmt::Expr),
-        expect(Token::SemiColon, Marker::Plain)
+        expect(Token::SemiColon, Marker::Plain),
     )
 }
 
 pub fn parse_stmt_move<'a>() -> impl Parser<'a, Stmt> {
     combine(
-        expect_pred(|&t| matches!(t, Token::Forward | Token::Left | Token::Right), Marker::Move),
+        expect_pred(
+            |&t| matches!(t, Token::Forward | Token::Left | Token::Right),
+            Marker::Move,
+        ),
         first(
             parse_expr().deny(Token::SemiColon),
             expect(Token::SemiColon, Marker::Plain),
@@ -756,7 +672,7 @@ pub fn parse_stmt_move<'a>() -> impl Parser<'a, Stmt> {
             Token::Left => Stmt::Left(expr),
             Token::Right => Stmt::Right(expr),
             _ => unreachable!(),
-        }
+        },
     )
 }
 
@@ -766,7 +682,7 @@ pub fn parse_stmt_if<'a>() -> impl Parser<'a, Stmt> {
         combine(
             parse_expr().deny(Token::LeftBrace),
             parse_stmt_scope().deny(Token::Else),
-            |expr, stmt| (expr, stmt)
+            |expr, stmt| (expr, stmt),
         ),
     );
 
@@ -775,20 +691,23 @@ pub fn parse_stmt_if<'a>() -> impl Parser<'a, Stmt> {
         let deny_any = |t: &Token| t.dist() > 0;
 
         let span = match run.first_where(is_else, deny_any) {
-            Pass::None(run) => return ParseResult::Success(None, Vec::new(), run),
-            Pass::Some(_, span) => span,
+            ReadResult::None(run) => return ParseResult::Success(None, Vec::new(), run),
+            ReadResult::Some(_, span) => span,
         };
 
-        let markers = span.dissect_init(
-            Token::is_whitespace, 
+        let markers = span.dissect(
+            Token::is_whitespace,
             |t| match t {
                 Token::Whitespace(ws) => Marker::Whitespace(ws),
                 Token::Comment(cmt) => Marker::Comment(cmt),
                 Token::LineBreak => Marker::LineBreak,
-                _ => unreachable!()
+                _ => unreachable!(),
             },
-            |t| Marker::UnexpectedToken { expected: span.last().unwrap(), actual: t },
-            |t| Marker::Keyword(t)
+            |t| Marker::UnexpectedToken {
+                expected: span.last().unwrap(),
+                actual: t,
+            },
+            |t| Marker::Keyword(t),
         );
 
         match parse_stmt_scope().parse(span.next(), deny) {
@@ -800,15 +719,15 @@ pub fn parse_stmt_if<'a>() -> impl Parser<'a, Stmt> {
     };
 
     combine(
-        parse_if.debug("if_parser"), 
-        parse_else, 
+        parse_if.debug("if_parser"),
+        parse_else,
         |(if_expr, if_body), else_block| {
             if let Some(else_body) = else_block {
                 Stmt::IfElse(if_expr, Box::new(if_body), Box::new(else_body))
             } else {
                 Stmt::If(if_expr, Box::new(if_body))
             }
-        }
+        },
     )
 }
 
@@ -818,7 +737,7 @@ fn parse_stmt_while<'a>() -> impl Parser<'a, Stmt> {
         combine(
             parse_expr().deny(Token::LeftBrace),
             parse_stmt_scope().map(Box::new),
-            Stmt::While
+            Stmt::While,
         ),
     )
 }
@@ -828,9 +747,9 @@ fn parse_stmt_return<'a>() -> impl Parser<'a, Stmt> {
         combine(
             expect(Token::Return, Marker::Flow),
             parse_expr().optional(),
-            |_, expr| Stmt::Return(expr)
+            |_, expr| Stmt::Return(expr),
         ),
-        expect(Token::SemiColon, Marker::Plain)
+        expect(Token::SemiColon, Marker::Plain),
     )
 }
 
@@ -851,25 +770,28 @@ fn parse_stmt<'a>() -> impl Parser<'a, Stmt> {
 
     move |run: Run<'a>, deny: Deny<'a>| {
         let span = match run.until_where(is_stmt_token, &deny) {
-            Pass::None(_) => return ParseResult::Error,
-            Pass::Some(_, span) => span
+            ReadResult::None(_) => return ParseResult::Error,
+            ReadResult::Some(_, span) => span,
         };
 
         // this is very unstable code
-        let markers1 = span.dissect_init(
-            Token::is_whitespace, 
+        let markers1 = span.dissect(
+            Token::is_whitespace,
             |t| match t {
                 Token::Whitespace(ws) => Marker::Whitespace(ws),
                 Token::Comment(cmt) => Marker::Comment(cmt),
                 Token::LineBreak => Marker::LineBreak,
-                _ => unreachable!("{:?}", t)
+                _ => unreachable!("{:?}", t),
             },
-            |t| Marker::UnexpectedToken { expected: span.last().unwrap(), actual: t },
+            |t| Marker::UnexpectedToken {
+                expected: span.last().unwrap(),
+                actual: t,
+            },
             |t| match t {
                 Token::Whitespace(ws) => Marker::Whitespace(ws),
                 Token::Comment(cmt) => Marker::Comment(cmt),
                 Token::LineBreak => Marker::LineBreak,
-                t => panic!("{:?}", t)
+                t => panic!("{:?}", t),
             },
         );
 
@@ -884,7 +806,7 @@ fn parse_stmt<'a>() -> impl Parser<'a, Stmt> {
             Token::Left => parse_stmt_move().parse(span.next(), deny),
             Token::Right => parse_stmt_move().parse(span.next(), deny),
             Token::Return => parse_stmt_return().parse(span.next(), deny),
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         if parse_result.is_err() {
@@ -899,55 +821,37 @@ fn parse_stmt<'a>() -> impl Parser<'a, Stmt> {
 
 pub fn parse_func<'a>() -> impl Parser<'a, Entry> {
     let params_parser = wrapped_attached(
-        Token::LeftParen, 
+        Token::LeftParen,
         Token::RightParen,
         seperated_by(
             expect_some(Token::identifier, |id, _| Marker::Identifier(id)),
-            Token::Comma
-        )
+            Token::Comma,
+        ),
     );
 
     let header_parser = second(
         expect(Token::Func, Marker::Keyword),
         combine(
-            expect_some(
-                Token::identifier,
-                |id, _| Marker::Function(id)
-            ),
+            expect_some(Token::identifier, |id, _| Marker::Function(id)),
             params_parser,
-            |name, params| (name, params)
+            |name, params| (name, params),
         ),
-    ).update_context(
-        |(func, args), ctx| ctx.register_function(*func, args.clone())
     );
 
-    combine(
-        header_parser,
-        parse_stmt_scope(),
-        |header, body| {
-            let (name, params) = header;
-            let params = params.iter().map(|&s| s.to_string()).collect();
-            Entry::Func(name.to_string(), params, body)
-        }
-    )
+    combine(header_parser, parse_stmt_scope(), |header, body| {
+        let (name, params) = header;
+        let params = params.iter().map(|&s| s.to_string()).collect();
+        Entry::Func(name.to_string(), params, body)
+    })
 }
 
 pub fn parse_program<'a>() -> impl Parser<'a, Program> {
-    let parse_stmt = |run: Run<'a>, deny: Deny<'a>| {
-        parse_stmt().parse(run, deny).map(Entry::Stmt)
-    };
+    let parse_stmt = |run: Run<'a>, deny: Deny<'a>| parse_stmt().parse(run, deny).map(Entry::Stmt);
 
-    let parse_func = |run: Run<'a>, deny: Deny<'a>| {
-        parse_func().parse(run, deny)
-    };
+    let parse_func = |run: Run<'a>, deny: Deny<'a>| parse_func().parse(run, deny);
 
     first(
-        many(
-            choice(vec![
-                parse_stmt,
-                parse_func,
-            ]),
-        ),
+        many(choice(vec![parse_stmt, parse_func])),
         expect(Token::Eof, Marker::Plain),
     )
 }

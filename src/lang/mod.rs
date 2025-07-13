@@ -1,13 +1,14 @@
-mod lex;
-mod run;
-mod parse;
 mod ast;
 mod compile;
+mod grammar;
+mod lex;
+mod parse;
+mod run;
 
 pub use ast::*;
+pub use compile::compile;
 pub use lex::{Lexer, Token};
-pub use compile::{compile};
-pub use run::{Run, Pass};
+pub use run::{ReadResult, Run};
 
 use parse::ParseResult;
 use parse::{Deny, Parser};

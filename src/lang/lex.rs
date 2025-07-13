@@ -48,7 +48,7 @@ pub enum Token<'a> {
 
     Whitespace(&'a str),
     Comment(&'a str),
-    LineBreak
+    LineBreak,
 }
 
 pub type Tokens<'a> = &'a [Token<'a>];
@@ -82,7 +82,7 @@ impl<'a> Token<'a> {
             Self::Whitespace(_) => true,
             Self::Comment(_) => true,
             Self::LineBreak => true,
-            _ => false
+            _ => false,
         }
     }
 }
@@ -95,12 +95,11 @@ pub struct Loc {
     pub char: usize,
 }
 
-
 #[derive(Debug)]
 pub struct Lexer<'a> {
     input: &'a str,
     current_char: Option<&'a u8>,
-    pos: Loc
+    pos: Loc,
 }
 
 impl<'a> Lexer<'a> {
@@ -129,32 +128,32 @@ impl<'a> Lexer<'a> {
         let r = self.input.as_bytes().get(index + 2).copied().unwrap_or(0);
 
         matches!(
-            (p, q, r), 
-            (0x09, _, _) | 
-            (0x0B, _, _) |
-            (0x0C, _, _) |
-            (0x0D, _, _) |
-            (0x20, _, _) | 
-            (0xC2, 0x85, _) |
-            (0xC2, 0xA0, _) | 
-            (0xE1, 0x9A, 0x80) | 
-            (0xE1, 0xA0, 0x8E) |
-            (0xE2, 0x80, 0x80) |
-            (0xE2, 0x80, 0x81) |
-            (0xE2, 0x80, 0x82) |
-            (0xE2, 0x80, 0x83) |
-            (0xE2, 0x80, 0x84) |
-            (0xE2, 0x80, 0x85) |
-            (0xE2, 0x80, 0x86) |
-            (0xE2, 0x80, 0x87) |
-            (0xE2, 0x80, 0x88) |
-            (0xE2, 0x80, 0x89) |
-            (0xE2, 0x80, 0x8A) |
-            (0xE2, 0x80, 0xA8) |
-            (0xE2, 0x80, 0xA9) |
-            (0xE2, 0x80, 0xAF) |
-            (0xE2, 0x81, 0x9F) |
-            (0xE3, 0x80, 0x80)
+            (p, q, r),
+            (0x09, _, _)
+                | (0x0B, _, _)
+                | (0x0C, _, _)
+                | (0x0D, _, _)
+                | (0x20, _, _)
+                | (0xC2, 0x85, _)
+                | (0xC2, 0xA0, _)
+                | (0xE1, 0x9A, 0x80)
+                | (0xE1, 0xA0, 0x8E)
+                | (0xE2, 0x80, 0x80)
+                | (0xE2, 0x80, 0x81)
+                | (0xE2, 0x80, 0x82)
+                | (0xE2, 0x80, 0x83)
+                | (0xE2, 0x80, 0x84)
+                | (0xE2, 0x80, 0x85)
+                | (0xE2, 0x80, 0x86)
+                | (0xE2, 0x80, 0x87)
+                | (0xE2, 0x80, 0x88)
+                | (0xE2, 0x80, 0x89)
+                | (0xE2, 0x80, 0x8A)
+                | (0xE2, 0x80, 0xA8)
+                | (0xE2, 0x80, 0xA9)
+                | (0xE2, 0x80, 0xAF)
+                | (0xE2, 0x81, 0x9F)
+                | (0xE3, 0x80, 0x80)
         )
     }
 
@@ -195,7 +194,7 @@ impl<'a> Lexer<'a> {
 
     /// Returns true when given `char` cannot be part of an identifier
     /// string.
-    /// 
+    ///
     fn is_forbidden_identifier_char(&self) -> bool {
         matches!(
             self.current_char.unwrap_or(&0),
@@ -239,7 +238,11 @@ impl<'a> Lexer<'a> {
         let start = self.pos.byte;
 
         // Everything before the delimiter
-        while self.current_char.map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        while self
+            .current_char
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
+        {
             self.advance()
         }
 
@@ -284,6 +287,7 @@ impl<'a> Lexer<'a> {
             }
             b'=' => {
                 self.advance();
+
                 if self.current_char == Some(&b'=') {
                     self.advance();
                     Token::Equals
@@ -293,6 +297,7 @@ impl<'a> Lexer<'a> {
             }
             b'!' => {
                 self.advance();
+
                 if self.current_char == Some(&b'=') {
                     self.advance();
                     Token::NotEqual
@@ -302,6 +307,7 @@ impl<'a> Lexer<'a> {
             }
             b'>' => {
                 self.advance();
+
                 if self.current_char == Some(&b'=') {
                     self.advance();
                     Token::GreaterEqualThan
@@ -311,6 +317,7 @@ impl<'a> Lexer<'a> {
             }
             b'<' => {
                 self.advance();
+
                 if self.current_char == Some(&b'=') {
                     self.advance();
                     Token::LessEqualThan

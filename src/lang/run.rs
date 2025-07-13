@@ -1,4 +1,4 @@
-use super::{lex::{Token, Tokens}, Context};
+use super::lex::{Token, Tokens};
 
 pub trait Contains<'a> {
     fn contains(&self, token: &'a Token<'a>) -> bool;
@@ -17,7 +17,7 @@ where
 pub struct Span<'a> {
     dist: usize,
     tokens: Tokens<'a>,
-    next: Run<'a>
+    next: Run<'a>,
 }
 
 impl<'a> Span<'a> {
@@ -45,12 +45,18 @@ impl<'a> Span<'a> {
         self.next
     }
 
-    pub fn dissect_init<Pred, MapTrue, MapFalse, Append, T>(&self, pred: Pred, map_true: MapTrue, map_false: MapFalse, append: Append) -> Vec<T> 
+    pub fn dissect<Pred, MapTrue, MapFalse, Append, T>(
+        &self,
+        pred: Pred,
+        map_true: MapTrue,
+        map_false: MapFalse,
+        append: Append,
+    ) -> Vec<T>
     where
         Pred: Fn(&'a Token<'a>) -> bool,
         MapTrue: Fn(Token<'a>) -> T,
         MapFalse: Fn(Tokens<'a>) -> T,
-        Append: Fn(Token<'a>) -> T
+        Append: FnOnce(Token<'a>) -> T,
     {
         let mut result = Vec::new();
         let mut i = 0;
@@ -85,46 +91,35 @@ impl<'a> Span<'a> {
     }
 }
 
-pub enum Pass<'a, T> {
+pub enum ReadResult<'a, T> {
     Some(T, Span<'a>),
-    None(Run<'a>)
+    None(Run<'a>),
 }
 
 #[derive(Clone, Debug)]
 pub struct Run<'a> {
     dist: usize,
     input: Tokens<'a>,
-    context: Context
 }
 
 impl<'a> Run<'a> {
     pub fn new(input: Tokens<'a>) -> Self {
-        Run {
-            dist: 0,
-            input,
-            context: Context::new()
-        }
+        Run { dist: 0, input }
     }
 
-    fn pass<T>(self, dist: usize, value: T, offset: usize) -> Pass<'a, T> {
-        Pass::Some(
-            value, 
-            Span { 
-                dist: dist, 
-                tokens: &self.input[..offset], 
-                next: Run { 
-                    dist: self.dist + dist, 
+    fn to_read_result<T>(self, dist: usize, value: T, offset: usize) -> ReadResult<'a, T> {
+        ReadResult::Some(
+            value,
+            Span {
+                dist: dist,
+                tokens: &self.input[..offset],
+                next: Run {
+                    dist: self.dist + dist,
                     input: &self.input[offset..],
-                    context: self.context
-                } 
-            }
+                },
+            },
         )
     }
-
-    pub fn context(&self) -> &Context {
-        &self.context
-    }
-
 
     pub fn dist(&self) -> usize {
         self.dist
@@ -134,73 +129,73 @@ impl<'a> Run<'a> {
         self.input.len()
     }
 
-    pub fn next_pass(self, deny: impl Contains<'a>) -> Pass<'a, ()> {
+    pub fn next_pass(self, deny: impl Contains<'a>) -> ReadResult<'a, ()> {
         let mut dist = 0;
 
         for (idx, token) in self.input.iter().enumerate() {
             if deny.contains(token) {
-                return self.pass(dist, (), idx + 1);
+                return self.to_read_result(dist, (), idx + 1);
             }
 
             dist += token.dist();
         }
 
-        Pass::None(self)
+        ReadResult::None(self)
     }
 
+    // this is cursed
     pub fn until_where(
         self,
         pred: impl Fn(&'a Token<'a>) -> bool,
-        deny: impl Contains<'a>
-    ) -> Pass<'a, ()> {
+        deny: impl Contains<'a>,
+    ) -> ReadResult<'a, ()> {
         let mut dist = 0;
 
         for (idx, token) in self.input.iter().enumerate() {
             if pred(token) {
-                return self.pass(dist, (), idx);
+                return self.to_read_result(dist, (), idx);
             }
 
             if deny.contains(token) {
-                return Pass::None(self);
+                return ReadResult::None(self);
             }
 
             dist += token.dist();
         }
 
-        Pass::None(self)
+        ReadResult::None(self)
     }
-
 
     pub fn first_where(
         self,
         pred: impl Fn(&'a Token<'a>) -> bool,
         deny: impl Contains<'a>,
-    ) -> Pass<'a, ()> {
+    ) -> ReadResult<'a, Token<'a>> {
         let mut dist = 0;
 
         for (idx, token) in self.input.iter().enumerate() {
             if pred(token) {
-                return self.pass(dist, (), idx + 1);
+                return self.to_read_result(dist, token.clone(), idx + 1);
             }
 
             if deny.contains(token) {
-                return Pass::None(self);
+                return ReadResult::None(self);
             }
 
             dist += token.dist();
         }
 
-        Pass::None(self)
+        ReadResult::None(self)
     }
 
     /// Traverses the input until the given predicate returns a `Some` value. Tokens
     /// cannot be skipped when they are contained in the provided `deny` set.
     ///
-    /// The predicate `pred` is provided two arguments: 
+    /// The predicate `pred` is provided two arguments:
     ///   1. `token`, the current token in the stream
-    ///   2. `peek`, the token that comes after `token`, or `Token::Eof` if `token` 
+    ///   2. `peek`, the token that comes after `token`, or `Token::Eof` if `token`
     ///              is at the end of the stream.
-    /// 
+    ///
     /// The returned tuple contains in order:
     ///   1. The `dist` distance value of skipped tokens.
     ///   2. The value returned by `pred`.
@@ -214,32 +209,23 @@ impl<'a> Run<'a> {
         self,
         pred: impl Fn(&'a Token<'a>) -> Option<T>,
         deny: impl Contains<'a>,
-    ) -> Pass<'a, T> {
+    ) -> ReadResult<'a, T> {
         let mut dist = 0;
 
         for (idx, token) in self.input.iter().enumerate() {
             if let Some(value) = pred(token) {
-                return self.pass(dist, value, idx + 1);
+                return self.to_read_result(dist, value, idx + 1);
             }
 
             if deny.contains(token) {
-                return Pass::None(self);
+                return ReadResult::None(self);
             }
 
             dist += token.dist();
         }
 
-        Pass::None(self)
+        ReadResult::None(self)
     }
-
-    pub fn update_context(self, map: impl FnOnce(Context) -> Context) -> Run<'a> {
-        Run { 
-            dist: self.dist, 
-            input: self.input, 
-            context: map(self.context) 
-        }
-    }
-
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
-use std::{collections::{HashMap, HashSet}};
+use std::collections::{HashMap, HashSet};
 
-use super::{lex::Tokens, Token};
+use super::{Token, lex::Tokens};
 
 #[derive(Debug, Clone)]
 pub enum Expr {
@@ -23,6 +23,22 @@ pub enum Expr {
     Call(String, Vec<Expr>),
 }
 
+impl Expr {
+    pub fn var(&self) -> Option<&String> {
+        match self {
+            Self::Var(var) => Some(var),
+            _ => None,
+        }
+    }
+
+    pub fn num(&self) -> Option<&f64> {
+        match self {
+            Self::Num(num) => Some(num),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Stmt {
     If(Expr, Box<Stmt>),
@@ -33,13 +49,13 @@ pub enum Stmt {
     Right(Expr),
     Scope(Vec<Stmt>),
     Expr(Expr),
-    Return(Option<Expr>)
+    Return(Option<Expr>),
 }
 
 #[derive(Debug, Clone)]
 pub enum Entry {
     Func(String, Vec<String>, Stmt),
-    Stmt(Stmt)
+    Stmt(Stmt),
 }
 
 pub type Program = Vec<Entry>;
@@ -47,14 +63,14 @@ pub type Program = Vec<Entry>;
 #[derive(Debug, Clone, Copy)]
 pub enum Scope {
     Global,
-    Local
+    Local,
 }
 
 #[derive(Debug, Clone)]
 pub struct Context {
     variables: HashMap<String, Scope>,
     functions: HashSet<(String, usize)>,
-    scope: Scope
+    scope: Scope,
 }
 
 impl Context {
@@ -62,7 +78,7 @@ impl Context {
         Self {
             variables: HashMap::new(),
             functions: HashSet::new(),
-            scope: Scope::Global
+            scope: Scope::Global,
         }
     }
 
@@ -70,32 +86,35 @@ impl Context {
         Self {
             variables: self.variables,
             functions: self.functions,
-            scope: scope
+            scope: scope,
         }
     }
 
     pub fn register_variable(mut self, variable: impl Into<String>) -> Self {
         self.variables.insert(variable.into(), self.scope);
-        
+
         Self {
             variables: self.variables,
             functions: self.functions,
-            scope: self.scope
+            scope: self.scope,
         }
     }
 
-    pub fn register_function(mut self, function: impl Into<String>, args: Vec<impl Into<String>>) -> Self {
+    pub fn register_function(
+        mut self,
+        function: impl Into<String>,
+        args: Vec<impl Into<String>>,
+    ) -> Self {
         self.functions.insert((function.into(), args.len()));
 
         for arg in args {
             self.variables.insert(arg.into(), Scope::Local);
         }
 
-
         Self {
             variables: self.variables,
             functions: self.functions,
-            scope: self.scope
+            scope: self.scope,
         }
     }
 
@@ -107,9 +126,8 @@ impl Context {
     pub fn is_known_function(&self, function_name: impl Into<String>, arg_count: usize) -> bool {
         let function_name = function_name.into();
         return self.functions.contains(&(function_name, arg_count));
-    } 
+    }
 }
-
 
 #[derive(Debug, Clone)]
 pub enum Marker<'a> {
@@ -128,7 +146,7 @@ pub enum Marker<'a> {
     UnexpectedToken {
         expected: Token<'a>,
         actual: Tokens<'a>,
-    }
+    },
 }
 
 pub type Markers<'a> = Vec<Marker<'a>>;
