@@ -1,6 +1,8 @@
-/// The `Token` type
+use std::mem::offset_of;
+
+/// The `Symbol` type
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
-pub enum Token<'a> {
+pub enum Symbol<'a> {
     // util
     Undefined(&'a str),
     Eof,
@@ -51,42 +53,6 @@ pub enum Token<'a> {
     LineBreak,
 }
 
-pub type Tokens<'a> = &'a [Token<'a>];
-
-impl<'a> Token<'a> {
-    pub fn identifier(&self) -> Option<&'a str> {
-        match self {
-            Self::Identifier(id) => Some(id),
-            _ => None,
-        }
-    }
-
-    pub fn number(&self) -> Option<&'a str> {
-        match self {
-            Self::Number(num) => Some(num),
-            _ => None,
-        }
-    }
-
-    pub fn dist(&self) -> usize {
-        match self {
-            Self::Whitespace(_) => 0,
-            Self::Comment(_) => 0,
-            Self::LineBreak => 0,
-            _ => 1,
-        }
-    }
-
-    pub fn is_whitespace(&self) -> bool {
-        match self {
-            Self::Whitespace(_) => true,
-            Self::Comment(_) => true,
-            Self::LineBreak => true,
-            _ => false,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct Loc {
     pub line: usize,
@@ -94,6 +60,49 @@ pub struct Loc {
     pub byte: usize,
     pub char: usize,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct Token<'a> {
+    pub symbol: Symbol<'a>,
+    pub index_from: usize,
+    pub index_to: usize,
+}
+
+impl<'a> Token<'a> {
+    pub fn identifier(&self) -> Option<&'a str> {
+        match self.symbol {
+            Symbol::Identifier(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    pub fn number(&self) -> Option<&'a str> {
+        match self.symbol {
+            Symbol::Number(num) => Some(num),
+            _ => None,
+        }
+    }
+
+    pub fn dist(&self) -> usize {
+        match self.symbol {
+            Symbol::Whitespace(_) => 0,
+            Symbol::Comment(_) => 0,
+            Symbol::LineBreak => 0,
+            _ => 1,
+        }
+    }
+
+    pub fn is_whitespace(&self) -> bool {
+        match self.symbol {
+            Symbol::Whitespace(_) => true,
+            Symbol::Comment(_) => true,
+            Symbol::LineBreak => true,
+            _ => false,
+        }
+    }
+}
+
+pub type Tokens<'a> = &'a [Token<'a>];
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
@@ -261,38 +270,43 @@ impl<'a> Lexer<'a> {
 
     pub fn next_token(&mut self) -> Token<'a> {
         if self.current_char.is_none() {
-            return Token::Eof;
+            return Token {
+                symbol: Symbol::Eof,
+                index_from: self.pos.byte,
+                index_to: 0,
+            };
         }
 
+        let offset = self.pos.byte;
         let token = match self.current_char.unwrap() {
             b';' => {
                 self.advance();
-                Token::SemiColon
+                Symbol::SemiColon
             }
             b'+' => {
                 self.advance();
-                Token::Plus
+                Symbol::Plus
             }
             b'-' => {
                 self.advance();
-                Token::Minus
+                Symbol::Minus
             }
             b'*' => {
                 self.advance();
-                Token::Multiply
+                Symbol::Multiply
             }
             b'/' => {
                 self.advance();
-                Token::Divide
+                Symbol::Divide
             }
             b'=' => {
                 self.advance();
 
                 if self.current_char == Some(&b'=') {
                     self.advance();
-                    Token::Equals
+                    Symbol::Equals
                 } else {
-                    Token::Assign
+                    Symbol::Assign
                 }
             }
             b'!' => {
@@ -300,9 +314,9 @@ impl<'a> Lexer<'a> {
 
                 if self.current_char == Some(&b'=') {
                     self.advance();
-                    Token::NotEqual
+                    Symbol::NotEqual
                 } else {
-                    Token::Bang
+                    Symbol::Bang
                 }
             }
             b'>' => {
@@ -310,9 +324,9 @@ impl<'a> Lexer<'a> {
 
                 if self.current_char == Some(&b'=') {
                     self.advance();
-                    Token::GreaterEqualThan
+                    Symbol::GreaterEqualThan
                 } else {
-                    Token::GreaterThan
+                    Symbol::GreaterThan
                 }
             }
             b'<' => {
@@ -320,76 +334,80 @@ impl<'a> Lexer<'a> {
 
                 if self.current_char == Some(&b'=') {
                     self.advance();
-                    Token::LessEqualThan
+                    Symbol::LessEqualThan
                 } else {
-                    Token::LessThan
+                    Symbol::LessThan
                 }
             }
             b'(' => {
                 self.advance();
-                Token::LeftParen
+                Symbol::LeftParen
             }
             b')' => {
                 self.advance();
-                Token::RightParen
+                Symbol::RightParen
             }
             b'{' => {
                 self.advance();
-                Token::LeftBrace
+                Symbol::LeftBrace
             }
             b'}' => {
                 self.advance();
-                Token::RightBrace
+                Symbol::RightBrace
             }
             b',' => {
                 self.advance();
-                Token::Comma
+                Symbol::Comma
             }
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => match self.read_identifier() {
-                "func" => Token::Func,
-                "if" => Token::If,
-                "else" => Token::Else,
-                "while" => Token::While,
-                "return" => Token::Return,
-                "break" => Token::Break,
-                "forward" => Token::Forward,
-                "left" => Token::Left,
-                "right" => Token::Right,
-                "true" => Token::True,
-                "false" => Token::False,
-                id => Token::Identifier(id),
+                "func" => Symbol::Func,
+                "if" => Symbol::If,
+                "else" => Symbol::Else,
+                "while" => Symbol::While,
+                "return" => Symbol::Return,
+                "break" => Symbol::Break,
+                "forward" => Symbol::Forward,
+                "left" => Symbol::Left,
+                "right" => Symbol::Right,
+                "true" => Symbol::True,
+                "false" => Symbol::False,
+                id => Symbol::Identifier(id),
             },
             b'0'..=b'9' => {
                 let num = self.read_number();
-                Token::Number(num)
+                Symbol::Number(num)
             }
             b'\n' => {
                 self.advance();
-                Token::LineBreak
+                Symbol::LineBreak
             }
             _ if self.is_whitespace() => {
                 let whitespace = self.read_whitespace();
-                Token::Whitespace(whitespace)
+                Symbol::Whitespace(whitespace)
             }
             _ => {
                 let any = self.read_any();
-                Token::Undefined(any)
+                Symbol::Undefined(any)
             }
         };
 
-        token
+        Token {
+            symbol: token,
+            index_from: offset,
+            index_to: self.pos.byte,
+        }
     }
 
     pub fn tokens(&mut self) -> Vec<Token<'a>> {
         let mut vec = Vec::new();
-        let mut token = self.next_token();
+        let mut reading = self.next_token();
 
-        while token != Token::Eof {
-            vec.push(token);
-            token = self.next_token();
+        while reading.symbol != Symbol::Eof {
+            vec.push(reading);
+            reading = self.next_token();
         }
 
-        vec.push(token);
+        vec.push(reading);
         vec
     }
 }

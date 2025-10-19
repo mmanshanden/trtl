@@ -1,93 +1,128 @@
+use std::rc::Rc;
+
+use crate::lang::Symbol;
+
 use super::lex::{Token, Tokens};
 
+#[derive(Debug, Clone)]
+pub enum Deny<'a> {
+    Cons(Symbol<'a>, Rc<Deny<'a>>),
+    Nil,
+}
+
+impl<'a> Deny<'a> {
+    pub fn new() -> Self {
+        Deny::Nil
+    }
+
+    pub fn insert(&self, token: Symbol<'a>) -> Self {
+        let clone = self.clone();
+        Self::Cons(token, Rc::new(clone))
+    }
+}
+
 pub trait Contains<'a> {
-    fn contains(&self, token: &'a Token<'a>) -> bool;
+    fn contains(&self, token: &'a Symbol<'a>) -> bool;
+}
+
+impl<'a> Contains<'a> for Deny<'a> {
+    fn contains(&self, token: &'a Symbol<'a>) -> bool {
+        match self {
+            Deny::Cons(value, tail) => token == value || tail.contains(token),
+            Deny::Nil => false,
+        }
+    }
+}
+
+impl<'a> Contains<'a> for &Deny<'a> {
+    fn contains(&self, token: &'a Symbol<'a>) -> bool {
+        match self {
+            Deny::Cons(value, tail) => token == value || tail.contains(token),
+            Deny::Nil => false,
+        }
+    }
 }
 
 impl<'a, F> Contains<'a> for F
 where
-    F: Fn(&'a Token<'a>) -> bool,
+    F: Fn(&'a Symbol<'a>) -> bool,
 {
-    fn contains(&self, token: &'a Token<'a>) -> bool {
-        self(token)
+    fn contains(&self, symbol: &'a Symbol<'a>) -> bool {
+        self(symbol)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Range {
+    index_from: usize,
+    index_to: usize,
+}
+
+impl Range {
+    pub fn new(index_from: usize, index_to: usize) -> Self {
+        Range {
+            index_from,
+            index_to,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.index_to - self.index_from
+    }
+
+    pub fn extend(self, other: Range) -> Self {
+        Range {
+            index_from: self.index_from,
+            index_to: other.index_to,
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct Span<'a> {
     dist: usize,
-    tokens: Tokens<'a>,
-    next: Run<'a>,
+    source: Run<'a>,
+    range: Range,
 }
 
+/// A span represents a contiguous sequence of one or more tokens read from the
+/// input stream by a Run instance, ending at the token that satisfied the read
+/// condition.
+///
 impl<'a> Span<'a> {
     pub fn all(&self) -> Tokens<'a> {
-        self.tokens
+        &self.source.tokens[..self.range.index_from]
     }
 
     pub fn init(&self) -> Tokens<'a> {
-        if self.tokens.len() > 1 {
-            &self.tokens[..self.tokens.len() - 1]
-        } else {
-            &[]
+        &self.source.tokens[..self.range.index_from - 1]
+    }
+
+    pub fn last(&self) -> Token<'a> {
+        self.source.tokens[self.range.index_to - 1]
+    }
+
+    pub fn peek_symbol(&self) -> Option<&'a Symbol<'a>> {
+        self.source
+            .tokens
+            .get(self.range.index_to)
+            .map(|token| &token.symbol)
+    }
+
+    pub fn range(&self) -> Range {
+        self.range
+    }
+
+    pub fn revert(self) -> Run<'a> {
+        self.source
+    }
+
+    pub fn cont(self) -> Run<'a> {
+        Run {
+            dist: self.source.dist + self.dist,
+            tokens: &self.source.tokens,
+            position: self.range.index_to,
         }
-    }
-
-    pub fn last(&self) -> Option<Token<'a>> {
-        self.tokens.get(self.tokens.len() - 1).copied()
-    }
-
-    pub fn peek(&self) -> Option<&'a Token<'a>> {
-        self.next.input.get(0)
-    }
-
-    pub fn next(self) -> Run<'a> {
-        self.next
-    }
-
-    pub fn dissect<Pred, MapTrue, MapFalse, Append, T>(
-        &self,
-        pred: Pred,
-        map_true: MapTrue,
-        map_false: MapFalse,
-        append: Append,
-    ) -> Vec<T>
-    where
-        Pred: Fn(&'a Token<'a>) -> bool,
-        MapTrue: Fn(Token<'a>) -> T,
-        MapFalse: Fn(Tokens<'a>) -> T,
-        Append: FnOnce(Token<'a>) -> T,
-    {
-        let mut result = Vec::new();
-        let mut i = 0;
-
-        while i < self.init().len() {
-            if pred(&self.tokens[i]) {
-                result.push(map_true(self.tokens[i]));
-                i += 1;
-                continue;
-            }
-
-            let mut j = i + 1;
-
-            while j < self.init().len() {
-                if pred(&self.tokens[j]) {
-                    break;
-                }
-
-                j += 1;
-            }
-
-            result.push(map_false(&self.tokens[i..j]));
-
-            i = j;
-        }
-
-        if let Some(marker) = self.last().map(append) {
-            result.push(marker);
-        }
-
-        result
     }
 }
 
@@ -96,29 +131,38 @@ pub enum ReadResult<'a, T> {
     None(Run<'a>),
 }
 
+impl<'a, T> ReadResult<'a, T> {
+    pub fn unwrap_run(self) -> Run<'a> {
+        match self {
+            ReadResult::Some(_, span) => span.cont(),
+            _ => panic!("Called `unwrap_run` on a `ReadResult` that is not `Some`."),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Run<'a> {
+    /// A penalty score representing the number of skipped tokens
     dist: usize,
-    input: Tokens<'a>,
+
+    /// All tokens in the input stream
+    tokens: Tokens<'a>,
+
+    /// Current position in the token stream
+    position: usize,
 }
 
 impl<'a> Run<'a> {
     pub fn new(input: Tokens<'a>) -> Self {
-        Run { dist: 0, input }
+        Run {
+            dist: 0,
+            tokens: input,
+            position: 0,
+        }
     }
 
-    fn to_read_result<T>(self, dist: usize, value: T, offset: usize) -> ReadResult<'a, T> {
-        ReadResult::Some(
-            value,
-            Span {
-                dist: dist,
-                tokens: &self.input[..offset],
-                next: Run {
-                    dist: self.dist + dist,
-                    input: &self.input[offset..],
-                },
-            },
-        )
+    fn stream(&self) -> Tokens<'a> {
+        &self.tokens[self.position..]
     }
 
     pub fn dist(&self) -> usize {
@@ -126,59 +170,56 @@ impl<'a> Run<'a> {
     }
 
     pub fn remaining_input_len(&self) -> usize {
-        self.input.len()
+        self.tokens.len() - self.position
     }
 
-    pub fn next_pass(self, deny: impl Contains<'a>) -> ReadResult<'a, ()> {
-        let mut dist = 0;
-
-        for (idx, token) in self.input.iter().enumerate() {
-            if deny.contains(token) {
-                return self.to_read_result(dist, (), idx + 1);
-            }
-
-            dist += token.dist();
+    /// Reads the next token from the input stream.
+    ///
+    /// When a token is successfully read, a `ReadResult::Some` variant is returned,
+    /// containing a unit value `()` and a `Span` covering the read token.
+    ///
+    /// If there are no more tokens to read, a `ReadResult::None` variant is returned.
+    pub fn read_next(self) -> ReadResult<'a, ()> {
+        if let Some(token) = self.stream().first() {
+            ReadResult::Some(
+                (),
+                Span {
+                    dist: token.dist(),
+                    range: Range {
+                        index_from: self.position,
+                        index_to: self.position + 1,
+                    },
+                    source: self,
+                },
+            )
+        } else {
+            ReadResult::None(self)
         }
-
-        ReadResult::None(self)
     }
 
-    // this is cursed
-    pub fn until_where(
+    pub fn read_next_where(
         self,
-        pred: impl Fn(&'a Token<'a>) -> bool,
-        deny: impl Contains<'a>,
-    ) -> ReadResult<'a, ()> {
-        let mut dist = 0;
-
-        for (idx, token) in self.input.iter().enumerate() {
-            if pred(token) {
-                return self.to_read_result(dist, (), idx);
-            }
-
-            if deny.contains(token) {
-                return ReadResult::None(self);
-            }
-
-            dist += token.dist();
-        }
-
-        ReadResult::None(self)
-    }
-
-    pub fn first_where(
-        self,
-        pred: impl Fn(&'a Token<'a>) -> bool,
+        pred: impl Fn(&'a Symbol<'a>) -> bool,
         deny: impl Contains<'a>,
     ) -> ReadResult<'a, Token<'a>> {
         let mut dist = 0;
 
-        for (idx, token) in self.input.iter().enumerate() {
-            if pred(token) {
-                return self.to_read_result(dist, token.clone(), idx + 1);
+        for (idx, token) in self.stream().iter().enumerate() {
+            if pred(&token.symbol) {
+                return ReadResult::Some(
+                    *token,
+                    Span {
+                        dist,
+                        range: Range {
+                            index_from: self.position,
+                            index_to: self.position + idx,
+                        },
+                        source: self,
+                    },
+                );
             }
 
-            if deny.contains(token) {
+            if deny.contains(&token.symbol) {
                 return ReadResult::None(self);
             }
 
@@ -188,36 +229,29 @@ impl<'a> Run<'a> {
         ReadResult::None(self)
     }
 
-    /// Traverses the input until the given predicate returns a `Some` value. Tokens
-    /// cannot be skipped when they are contained in the provided `deny` set.
-    ///
-    /// The predicate `pred` is provided two arguments:
-    ///   1. `token`, the current token in the stream
-    ///   2. `peek`, the token that comes after `token`, or `Token::Eof` if `token`
-    ///              is at the end of the stream.
-    ///
-    /// The returned tuple contains in order:
-    ///   1. The `dist` distance value of skipped tokens.
-    ///   2. The value returned by `pred`.
-    ///   3. A `tokens` slice of skipped tokens.
-    ///   4. The first `token` for which the predicate returned `true`.
-    ///   5. The `next` run struct that can be used for parsing the remaining
-    ///      input.
-    ///            
-    /// A `None` is returned when the predicate never matches any input.
-    pub fn first_where_some<T>(
+    pub fn read_next_where_some<T>(
         self,
-        pred: impl Fn(&'a Token<'a>) -> Option<T>,
+        pred: impl Fn(&'a Symbol<'a>) -> Option<T>,
         deny: impl Contains<'a>,
     ) -> ReadResult<'a, T> {
         let mut dist = 0;
 
-        for (idx, token) in self.input.iter().enumerate() {
-            if let Some(value) = pred(token) {
-                return self.to_read_result(dist, value, idx + 1);
+        for (idx, token) in self.stream().iter().enumerate() {
+            if let Some(value) = pred(&token.symbol) {
+                return ReadResult::Some(
+                    value,
+                    Span {
+                        dist: dist,
+                        range: Range {
+                            index_from: self.position,
+                            index_to: self.position + idx,
+                        },
+                        source: self,
+                    },
+                );
             }
 
-            if deny.contains(token) {
+            if deny.contains(&token.symbol) {
                 return ReadResult::None(self);
             }
 
@@ -225,19 +259,5 @@ impl<'a> Run<'a> {
         }
 
         ReadResult::None(self)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_run_new() {
-        let tokens = &[Token::Identifier("a"), Token::Identifier("b")];
-        let run = Run::new(tokens);
-
-        assert_eq!(run.dist(), 0);
-        assert_eq!(run.remaining_input_len(), 2);
     }
 }

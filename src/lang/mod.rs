@@ -7,11 +7,11 @@ mod run;
 
 pub use ast::*;
 pub use compile::compile;
-pub use lex::{Lexer, Token};
+pub use lex::{Lexer, Symbol};
 pub use run::{ReadResult, Run};
 
+use parse::Deny;
 use parse::ParseResult;
-use parse::{Deny, Parser};
 
 pub fn parse_program<'a>(run: Run<'a>) -> Result<(Program, Markers<'a>), ()> {
     let deny = Deny::new();
