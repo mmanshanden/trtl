@@ -1,0 +1,449 @@
+use crate::lang::{
+    Expr, Operator, ReadResult, Run, Symbol,
+    parse::ParseResult,
+    run::{Deny, Range},
+};
+
+#[derive(PartialEq, Clone, Copy, Debug)]
+enum Associativity {
+    Left,
+    Right,
+}
+
+#[derive(PartialEq, Clone, Copy, Debug)]
+enum Delimiter {
+    Comma,
+    End,
+}
+
+pub fn is_expr_symbol(token: &Symbol<'_>) -> bool {
+    match token {
+        Symbol::Number(_) => true,
+        Symbol::Identifier(_) => true,
+        Symbol::LeftParen => true,
+        _ => false,
+    }
+}
+
+fn is_some_operation(token: &Symbol<'_>) -> Option<(Operator, u8, Associativity)> {
+    match token {
+        Symbol::Assign => Some((Operator::Assign, 1, Associativity::Right)),
+        Symbol::Equals => Some((Operator::Equal, 2, Associativity::Left)),
+        Symbol::NotEqual => Some((Operator::NotEqual, 2, Associativity::Left)),
+        Symbol::LessThan => Some((Operator::LessThan, 2, Associativity::Left)),
+        Symbol::LessEqualThan => Some((Operator::LessEqualThan, 2, Associativity::Left)),
+        Symbol::GreaterThan => Some((Operator::GreaterThan, 2, Associativity::Left)),
+        Symbol::GreaterEqualThan => Some((Operator::GreaterEqualThan, 2, Associativity::Left)),
+        Symbol::Plus => Some((Operator::Add, 3, Associativity::Left)),
+        Symbol::Minus => Some((Operator::Subtract, 3, Associativity::Left)),
+        Symbol::Multiply => Some((Operator::Multiply, 4, Associativity::Left)),
+        Symbol::Divide => Some((Operator::Divide, 4, Associativity::Left)),
+        _ => None,
+    }
+}
+
+fn is_argument_list_divider(symbol: &Symbol<'_>) -> Option<Delimiter> {
+    match symbol {
+        Symbol::Comma => Some(Delimiter::Comma),
+        Symbol::RightParen => Some(Delimiter::End),
+        _ => None,
+    }
+}
+
+fn parse_arg_list_delimited<'a>(
+    run: Run<'a>,
+    deny: &Deny<'a>,
+) -> ParseResult<'a, (Vec<Expr>, Range)> {
+    let span = match run.consume_next() {
+        ReadResult::Some(token, span) if token.symbol == Symbol::LeftParen => span,
+        _ => return ParseResult::Error,
+    };
+
+    let deny = deny.insert(Symbol::RightParen);
+    let start = span.range();
+    let run = span.cont();
+
+    // first argument
+    let (args, run) = match parse_expr(run.clone(), &deny) {
+        ParseResult::Error => (Vec::new(), run),
+        ParseResult::Success(arg, run) => {
+            let mut args = vec![arg];
+            let mut run = run;
+
+            let deny = deny.insert(Symbol::Comma);
+
+            // subsequent arguments
+            loop {
+                let span = match run
+                    .clone()
+                    .read_until_true(|&symbol| symbol == Symbol::Comma, &deny)
+                {
+                    ReadResult::Some(_, span) => span,
+                    ReadResult::None(revert) => {
+                        run = revert;
+                        break;
+                    }
+                };
+
+                match parse_expr(span.cont(), &deny) {
+                    ParseResult::Error => break,
+                    ParseResult::Success(arg, next) => {
+                        args.push(arg);
+                        run = next;
+                    }
+                };
+            }
+
+            (args, run)
+        }
+    };
+
+    let span = match run.read_until_true(|&symbol| symbol == Symbol::RightParen, deny) {
+        ReadResult::None(_) => return ParseResult::Error,
+        ReadResult::Some(_, span) => span,
+    };
+
+    let end = span.range();
+
+    ParseResult::Success((args, start.extend(end)), span.cont())
+}
+
+/// Parses an expression that can not be broken down further.
+fn parse_expr_atom<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
+    let (token, span) = match run.read_until_true(is_expr_symbol, deny) {
+        ReadResult::Some(token, span) => (token, span),
+        ReadResult::None(_) => return ParseResult::Error,
+    };
+
+    match token.symbol {
+        Symbol::Number(number_str) => ParseResult::Success(
+            Expr::Literal {
+                value: number_str.parse().unwrap(),
+                range: span.range(),
+            },
+            span.cont(),
+        ),
+        Symbol::LeftParen => {
+            let start = span.range();
+
+            let (expr, run) = match parse_expr(span.cont(), &deny.insert(Symbol::RightParen)) {
+                ParseResult::Error => return ParseResult::Error,
+                ParseResult::Success(expr, run) => (expr, run),
+            };
+
+            let span = match run.read_until_true(|token| token == &Symbol::RightParen, deny) {
+                ReadResult::None(_) => return ParseResult::Error,
+                ReadResult::Some(_, span) => span,
+            };
+
+            let end = span.range();
+
+            ParseResult::Success(
+                Expr::Parenthesis {
+                    expr: Box::new(expr),
+                    range: start.extend(end),
+                },
+                span.cont(),
+            )
+        }
+        Symbol::Identifier(ident) if span.peek_symbol() == Some(&Symbol::LeftParen) => {
+            let start = span.range();
+
+            let ((args, range), run) = match parse_arg_list_delimited(span.cont(), &deny) {
+                ParseResult::Error => return ParseResult::Error,
+                ParseResult::Success(args, run) => (args, run),
+            };
+
+            ParseResult::Success(
+                Expr::Call {
+                    function: ident.to_string(),
+                    args,
+                    range: start.extend(range),
+                },
+                run,
+            )
+        }
+        Symbol::Identifier(ident) => ParseResult::Success(
+            Expr::Variable {
+                identifier: ident.to_string(),
+                range: span.range(),
+            },
+            span.cont(),
+        ),
+        _ => unreachable!(),
+    }
+}
+
+/// Parses an expression using the precedence climbing method.
+///
+/// See: https://eli.thegreenplace.net/2012/08/02/parsing-expressions-by-precedence-climbing
+///
+fn parse_expr_chain<'a>(run: Run<'a>, deny: &Deny<'a>, min_prec: u8) -> ParseResult<'a, Expr> {
+    let (mut lhs, mut run) = match parse_expr_atom(run, deny) {
+        ParseResult::Success(expr, next) => (expr, next),
+        ParseResult::Error => return ParseResult::Error,
+    };
+
+    loop {
+        let (result, span) = match run.read_until_some(is_some_operation, deny) {
+            ReadResult::None(run) => return ParseResult::Success(lhs, run),
+            ReadResult::Some(result, span) => (result, span),
+        };
+
+        let (operator, prec, assoc) = result;
+
+        if prec < min_prec {
+            run = span.revert();
+            break;
+        } else {
+            run = span.cont();
+        }
+
+        let new_min_prec = if assoc == Associativity::Left {
+            prec + 1
+        } else {
+            prec
+        };
+
+        let rhs = match parse_expr_chain(run.clone(), deny, new_min_prec) {
+            ParseResult::Error => break,
+            ParseResult::Success(rhs, next) => {
+                run = next;
+                rhs
+            }
+        };
+
+        let range = lhs.range().extend(rhs.range());
+
+        lhs = Expr::Binary {
+            left_hand_side: Box::new(lhs),
+            right_hand_side: Box::new(rhs),
+            operator: operator,
+            range,
+        }
+    }
+
+    ParseResult::Success(lhs, run)
+}
+
+pub fn parse_expr<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
+    parse_expr_chain(run, deny, 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::lang::{Lexer, lex::Token};
+
+    use super::*;
+
+    fn create_tokens<'a>(input: &'a str) -> Vec<Token<'a>> {
+        let mut lexer = Lexer::new(input);
+        lexer.tokens()
+    }
+
+    #[test]
+    fn test_parse_number_literal() {
+        let tokens = create_tokens("42");
+        let run = Run::new(&tokens);
+        let deny = Deny::new();
+
+        match parse_expr(run, &deny) {
+            ParseResult::Success(expr, _) => {
+                if let Expr::Literal { value, .. } = expr {
+                    assert_eq!(value, 42.0);
+                } else {
+                    panic!("Expected Literal expression");
+                }
+            }
+            ParseResult::Error => panic!("Failed to parse number literal"),
+        }
+    }
+
+    #[test]
+    fn test_parse_variable() {
+        let tokens = create_tokens("x");
+        let run = Run::new(&tokens);
+        let deny = Deny::new();
+
+        match parse_expr(run, &deny) {
+            ParseResult::Success(expr, _) => {
+                if let Expr::Variable { identifier, .. } = expr {
+                    assert_eq!(identifier, "x");
+                } else {
+                    panic!("Expected Variable expression");
+                }
+            }
+            ParseResult::Error => panic!("Failed to parse variable"),
+        }
+    }
+
+    #[test]
+    fn test_parse_binary_operation() {
+        let tokens = create_tokens("2 + 3");
+        let run = Run::new(&tokens);
+        let deny = Deny::new();
+
+        match parse_expr(run, &deny) {
+            ParseResult::Success(expr, _) => {
+                if let Expr::Binary { operator, .. } = expr {
+                    assert_eq!(operator, Operator::Add);
+                } else {
+                    panic!("Expected Binary expression");
+                }
+            }
+            ParseResult::Error => panic!("Failed to parse binary operation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_parenthesized_expr() {
+        let tokens = create_tokens("(42)");
+        let run = Run::new(&tokens);
+        let deny = Deny::new();
+
+        match parse_expr(run, &deny) {
+            ParseResult::Success(expr, _) => {
+                if let Expr::Parenthesis { expr, .. } = expr {
+                    if let Expr::Literal { value, .. } = *expr {
+                        assert_eq!(value, 42.0);
+                    } else {
+                        panic!("Expected Literal inside Parenthesis");
+                    }
+                } else {
+                    panic!("Expected Parenthesis expression");
+                }
+            }
+            ParseResult::Error => panic!("Failed to parse parenthesized expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_function_call() {
+        let tokens = create_tokens("foo(1, 2)");
+        let run = Run::new(&tokens);
+        let deny = Deny::new();
+
+        match parse_expr(run, &deny) {
+            ParseResult::Success(expr, _) => {
+                if let Expr::Call { function, args, .. } = expr {
+                    assert_eq!(function, "foo");
+                    assert_eq!(args.len(), 2);
+                } else {
+                    panic!("Expected Call expression");
+                }
+            }
+            ParseResult::Error => panic!("Failed to parse function call"),
+        }
+    }
+
+    #[test]
+    fn test_operator_precedence() {
+        let tokens = create_tokens("2 + 3 * 4");
+        let run = Run::new(&tokens);
+        let deny = Deny::new();
+
+        match parse_expr(run, &deny) {
+            ParseResult::Success(expr, _) => {
+                if let Expr::Binary {
+                    operator: op1,
+                    right_hand_side,
+                    ..
+                } = expr
+                {
+                    assert_eq!(op1, Operator::Add);
+
+                    if let Expr::Binary { operator: op2, .. } = *right_hand_side {
+                        assert_eq!(op2, Operator::Multiply);
+                    } else {
+                        panic!("Expected multiplication in right hand side");
+                    }
+                } else {
+                    panic!("Expected Binary expression");
+                }
+            }
+            ParseResult::Error => panic!("Failed to parse expression with operator precedence"),
+        }
+    }
+
+    #[test]
+    fn test_assignment_expression() {
+        let tokens = create_tokens("x = 42");
+        let run = Run::new(&tokens);
+        let deny = Deny::new();
+
+        match parse_expr(run, &deny) {
+            ParseResult::Success(expr, _) => {
+                if let Expr::Binary { operator, .. } = expr {
+                    assert_eq!(operator, Operator::Assign);
+                } else {
+                    panic!("Expected Binary expression for assignment");
+                }
+            }
+            ParseResult::Error => panic!("Failed to parse assignment expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_complex_expression() {
+        let tokens = create_tokens("a = (b + 3) * 4 - foo(2, x)");
+        let run = Run::new(&tokens);
+        let deny = Deny::new();
+
+        let expr = match parse_expr(run, &deny) {
+            ParseResult::Success(expr, _) => expr,
+            ParseResult::Error => panic!("Failed to parse expression"),
+        };
+
+        let target = Expr::Binary {
+            left_hand_side: Box::new(Expr::Variable {
+                identifier: "a".to_string(),
+                range: Range::new(0, 1),
+            }),
+            right_hand_side: Box::new(Expr::Binary {
+                left_hand_side: Box::new(Expr::Binary {
+                    left_hand_side: Box::new(Expr::Parenthesis {
+                        expr: Box::new(Expr::Binary {
+                            left_hand_side: Box::new(Expr::Variable {
+                                identifier: "b".to_string(),
+                                range: Range::new(5, 6),
+                            }),
+                            right_hand_side: Box::new(Expr::Literal {
+                                value: 3.0,
+                                range: Range::new(8, 10),
+                            }),
+                            operator: Operator::Add,
+                            range: Range::new(5, 10),
+                        }),
+                        range: Range::new(3, 11),
+                    }),
+                    right_hand_side: Box::new(Expr::Literal {
+                        value: 4.0,
+                        range: Range::new(13, 15),
+                    }),
+                    operator: Operator::Multiply,
+                    range: Range::new(3, 15),
+                }),
+                right_hand_side: Box::new(Expr::Call {
+                    function: "foo".to_string(),
+                    args: vec![
+                        Expr::Literal {
+                            value: 2.0,
+                            range: Range::new(20, 21),
+                        },
+                        Expr::Variable {
+                            identifier: "x".to_string(),
+                            range: Range::new(22, 24),
+                        },
+                    ],
+                    range: Range::new(17, 25),
+                }),
+                operator: Operator::Subtract,
+                range: Range::new(3, 25),
+            }),
+            operator: Operator::Assign,
+            range: Range::new(0, 25),
+        };
+
+        assert_eq!(expr, target);
+    }
+}

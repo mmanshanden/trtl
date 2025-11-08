@@ -1,46 +1,4 @@
-use std::rc::Rc;
-
-use super::{
-    Marker, Markers,
-    ast::{Entry, Expr, Program, Stmt},
-    lex::{Symbol, Tokens},
-    run::{Contains, ReadResult, Run},
-};
-
-#[derive(Debug, Clone)]
-pub enum Deny<'a> {
-    Cons(Symbol<'a>, Rc<Deny<'a>>),
-    Nil,
-}
-
-impl<'a> Deny<'a> {
-    pub fn new() -> Self {
-        Deny::Nil
-    }
-
-    pub fn insert(&self, token: Symbol<'a>) -> Self {
-        let clone = self.clone();
-        Self::Cons(token, Rc::new(clone))
-    }
-}
-
-impl<'a> Contains<'a> for Deny<'a> {
-    fn contains(&self, token: &'a Symbol<'a>) -> bool {
-        match self {
-            Deny::Cons(value, tail) => token == value || tail.contains(token),
-            Deny::Nil => false,
-        }
-    }
-}
-
-impl<'a> Contains<'a> for &Deny<'a> {
-    fn contains(&self, token: &'a Symbol<'a>) -> bool {
-        match self {
-            Deny::Cons(value, tail) => token == value || tail.contains(token),
-            Deny::Nil => false,
-        }
-    }
-}
+use super::run::Run;
 
 #[derive(Debug, Clone)]
 pub enum ParseResult<'a, T> {

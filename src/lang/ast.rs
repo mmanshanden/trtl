@@ -5,12 +5,6 @@ use crate::lang::run::Range;
 use super::{Symbol, lex::Tokens};
 
 #[derive(Debug, Clone)]
-pub struct Span {
-    start: usize,
-    end: usize,
-}
-
-#[derive(Debug, Clone)]
 pub enum MoveDirection {
     MoveForward,
     TurnLeft,
@@ -32,26 +26,26 @@ pub enum Operator {
     LessEqualThan,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    NumericLiteral {
+    Literal {
         value: f64,
         range: Range,
     },
-    ParenthesizedExpression {
+    Parenthesis {
         expr: Box<Expr>,
         range: Range,
     },
-    VariableValue {
+    Variable {
         identifier: String,
         range: Range,
     },
-    FunctionCall {
+    Call {
         function: String,
         args: Vec<Expr>,
         range: Range,
     },
-    BinaryExpression {
+    Binary {
         left_hand_side: Box<Expr>,
         right_hand_side: Box<Expr>,
         operator: Operator,
@@ -79,11 +73,11 @@ pub enum Expr {
 impl Expr {
     pub fn range(&self) -> Range {
         match self {
-            Expr::NumericLiteral { range, .. } => *range,
-            Expr::ParenthesizedExpression { range, .. } => *range,
-            Expr::VariableValue { range, .. } => *range,
-            Expr::FunctionCall { range, .. } => *range,
-            Expr::BinaryExpression { range, .. } => *range,
+            Expr::Literal { range, .. } => *range,
+            Expr::Parenthesis { range, .. } => *range,
+            Expr::Variable { range, .. } => *range,
+            Expr::Call { range, .. } => *range,
+            Expr::Binary { range, .. } => *range,
         }
     }
 }
@@ -120,31 +114,15 @@ pub enum Stmt {
 }
 
 #[derive(Debug, Clone)]
-pub enum Entry {
-    Func(String, Vec<String>, Stmt),
-    Stmt(Stmt),
-}
-
-pub type Program = Vec<Entry>;
-
-#[derive(Debug, Clone)]
-pub enum Marker<'a> {
-    Number(&'a str),
-    Identifier(&'a str),
-    Function(&'a str),
-    Flow(Symbol<'a>),
-    Call(&'a str),
-    Keyword(Symbol<'a>),
-    Plain(Symbol<'a>),
-    Move(Symbol<'a>),
-    Comment(&'a str),
-    Whitespace(&'a str),
-    LineBreak,
-
-    UnexpectedToken {
-        expected: Symbol<'a>,
-        actual: Tokens<'a>,
+pub enum Cons {
+    Func {
+        name: String,
+        parmeters: Vec<String>,
+        body: Stmt,
+    },
+    Statement {
+        stmt: Stmt,
     },
 }
 
-pub type Markers<'a> = Vec<Marker<'a>>;
+pub type Program = Vec<Cons>;

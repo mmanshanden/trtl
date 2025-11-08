@@ -1,8 +1,7 @@
 use core::str;
 use std::{fs::File, io::Read};
 
-use lang::{parse_program, Lexer, Run};
-
+use lang::{Lexer, Run};
 
 // use minifb::{Window, WindowOptions};
 
@@ -12,7 +11,6 @@ pub mod machine;
 fn stdout(s: &str) {
     println!("{}", s);
 }
-
 
 fn main() {
     let source = "src/main.trs";
@@ -33,19 +31,18 @@ fn main() {
         }
     };
 
-
     let mut lexer = Lexer::new(&code);
     let tokens = lexer.tokens();
     let run = Run::new(&tokens);
 
-    let r = parse_program(run);
+    // let r = parse_program(run);
 
-    println!("Parse result: {:?}", r);
+    // println!("Parse result: {:?}", r);
 
     // let parse_result = parse_program(run);
 
     // let (program, dist, ops) = match parse_result {
-    //     ParseResult::Err(_) => { 
+    //     ParseResult::Err(_) => {
     //         println!("error");
     //         return
     //     },
@@ -53,7 +50,7 @@ fn main() {
     // };
 
     // let ops = compile(program);
-    
+
     // =======================
 
     // let window_options = WindowOptions::default();

@@ -53,6 +53,72 @@ pub enum Symbol<'a> {
     LineBreak,
 }
 
+impl<'a> Symbol<'a> {
+    pub fn identifier(&self) -> Option<&'a str> {
+        match self {
+            Symbol::Identifier(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    pub fn number(&self) -> Option<&'a str> {
+        match self {
+            Symbol::Number(num) => Some(num),
+            _ => None,
+        }
+    }
+
+    pub fn dist(&self) -> usize {
+        match self {
+            Symbol::Whitespace(_) => 0,
+            Symbol::Comment(_) => 0,
+            Symbol::LineBreak => 0,
+            _ => 1,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Symbol::Undefined(s) => s.len(),
+            Symbol::Identifier(s) => s.len(),
+            Symbol::Number(s) => s.len(),
+            Symbol::Whitespace(s) => s.len(),
+            Symbol::Comment(s) => s.len(),
+            Symbol::Assign => 1,
+            Symbol::Bang => 1,
+            Symbol::Plus => 1,
+            Symbol::Minus => 1,
+            Symbol::Multiply => 1,
+            Symbol::Divide => 1,
+            Symbol::SemiColon => 1,
+            Symbol::LeftParen => 1,
+            Symbol::RightParen => 1,
+            Symbol::Comma => 1,
+            Symbol::LeftBrace => 1,
+            Symbol::RightBrace => 1,
+            Symbol::Equals => 2,
+            Symbol::NotEqual => 2,
+            Symbol::GreaterThan => 1,
+            Symbol::GreaterEqualThan => 2,
+            Symbol::LessThan => 1,
+            Symbol::LessEqualThan => 2,
+            Symbol::If => 2,
+            Symbol::Else => 4,
+            Symbol::While => 5,
+            Symbol::Return => 6,
+            Symbol::Break => 5,
+            Symbol::Forward => 7,
+            Symbol::Left => 4,
+            Symbol::Right => 5,
+            Symbol::Func => 4,
+            Symbol::True => 4,
+            Symbol::False => 5,
+            Symbol::LineBreak => 1,
+            Symbol::Eof => 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Loc {
     pub line: usize,
@@ -61,7 +127,7 @@ pub struct Loc {
     pub char: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Token<'a> {
     pub symbol: Symbol<'a>,
     pub index_from: usize,
@@ -84,12 +150,7 @@ impl<'a> Token<'a> {
     }
 
     pub fn dist(&self) -> usize {
-        match self.symbol {
-            Symbol::Whitespace(_) => 0,
-            Symbol::Comment(_) => 0,
-            Symbol::LineBreak => 0,
-            _ => 1,
-        }
+        self.symbol.dist()
     }
 
     pub fn is_whitespace(&self) -> bool {

@@ -1,11 +1,11 @@
 use crate::lang::{
-    Expr, Marker, Markers, ReadResult, Run, Stmt, Symbol,
-    grammar::expr::parse_expr,
-    parse::{Deny, ParseResult},
-    run::Span,
+    Expr, ReadResult, Run, Stmt, Symbol,
+    grammar::expression::{is_expr_symbol, parse_expr},
+    parse::ParseResult,
+    run::{Deny, Span},
 };
 
-fn is_stmt_symbol(symbol: &Symbol<'_>) -> bool {
+pub fn is_stmt_symbol(symbol: &Symbol<'_>) -> bool {
     match symbol {
         Symbol::LeftBrace => true,
         Symbol::If => true,
@@ -14,15 +14,13 @@ fn is_stmt_symbol(symbol: &Symbol<'_>) -> bool {
         Symbol::Left => true,
         Symbol::Right => true,
         Symbol::Return => true,
-        Symbol::LeftParen => true,
-        Symbol::Identifier(_) => true,
-        Symbol::Number(_) => true,
+        any if is_expr_symbol(any) => true,
         _ => false,
     }
 }
 
 fn parse_stmt<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Stmt> {
-    let (token, span) = match run.read_next_where(is_stmt_symbol, deny) {
+    let (token, span) = match run.read_until_true(is_stmt_symbol, deny) {
         ReadResult::Some(token, span) => (token, span),
         ReadResult::None(_) => return ParseResult::Error,
     };
@@ -41,7 +39,7 @@ fn parse_stmt<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Stmt> {
                 run = next;
             }
 
-            let span = match run.read_next_where(|&token| token == Symbol::RightBrace, deny) {
+            let span = match run.read_until_true(|&token| token == Symbol::RightBrace, deny) {
                 ReadResult::None(_) => return ParseResult::Error,
                 ReadResult::Some(_, span) => span,
             };
@@ -64,7 +62,7 @@ fn parse_stmt<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Stmt> {
                 ParseResult::Success(expr, next) => (expr, next),
             };
 
-            let span = match run.read_next_where(|&token| token == Symbol::SemiColon, deny) {
+            let span = match run.read_until_true(|&token| token == Symbol::SemiColon, deny) {
                 ReadResult::None(_) => return ParseResult::Error,
                 ReadResult::Some(_, span) => span,
             };
