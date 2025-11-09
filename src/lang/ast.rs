@@ -1,7 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::lang::run::Range;
-
 use super::{Symbol, lex::Tokens};
 
 #[derive(Debug, Clone)]
@@ -30,26 +28,31 @@ pub enum Operator {
 pub enum Expr {
     Literal {
         value: f64,
-        range: Range,
+        index_from: usize,
+        index_to: usize,
     },
     Parenthesis {
         expr: Box<Expr>,
-        range: Range,
+        index_from: usize,
+        index_to: usize,
     },
     Variable {
         identifier: String,
-        range: Range,
+        index_from: usize,
+        index_to: usize,
     },
     Call {
         function: String,
         args: Vec<Expr>,
-        range: Range,
+        index_from: usize,
+        index_to: usize,
     },
     Binary {
         left_hand_side: Box<Expr>,
         right_hand_side: Box<Expr>,
         operator: Operator,
-        range: Range,
+        index_from: usize,
+        index_to: usize,
     },
     // Assign(String, Box<Expr>),
 
@@ -71,13 +74,23 @@ pub enum Expr {
 }
 
 impl Expr {
-    pub fn range(&self) -> Range {
+    pub fn index_from(&self) -> usize {
         match self {
-            Expr::Literal { range, .. } => *range,
-            Expr::Parenthesis { range, .. } => *range,
-            Expr::Variable { range, .. } => *range,
-            Expr::Call { range, .. } => *range,
-            Expr::Binary { range, .. } => *range,
+            Expr::Literal { index_from, .. } => *index_from,
+            Expr::Parenthesis { index_from, .. } => *index_from,
+            Expr::Variable { index_from, .. } => *index_from,
+            Expr::Call { index_from, .. } => *index_from,
+            Expr::Binary { index_from, .. } => *index_from,
+        }
+    }
+
+    pub fn index_to(&self) -> usize {
+        match self {
+            Expr::Literal { index_to, .. } => *index_to,
+            Expr::Parenthesis { index_to, .. } => *index_to,
+            Expr::Variable { index_to, .. } => *index_to,
+            Expr::Call { index_to, .. } => *index_to,
+            Expr::Binary { index_to, .. } => *index_to,
         }
     }
 }
@@ -88,20 +101,24 @@ pub enum Stmt {
         condition: Expr,
         body: Box<Stmt>,
         alternate: Option<Box<Stmt>>,
-        range: Range,
+        index_from: usize,
+        index_to: usize,
     },
     Move {
         argument: Expr,
         direction: MoveDirection,
-        range: Range,
+        index_from: usize,
+        index_to: usize,
     },
     Block {
         body: Vec<Stmt>,
-        range: Range,
+        index_from: usize,
+        index_to: usize,
     },
     Expression {
         expr: Expr,
-        range: Range,
+        index_from: usize,
+        index_to: usize,
     }, // If(Expr, Box<Stmt>),
        // IfElse(Expr, Box<Stmt>, Box<Stmt>),
        // While(Expr, Box<Stmt>),
@@ -114,14 +131,25 @@ pub enum Stmt {
 }
 
 #[derive(Debug, Clone)]
+pub struct Param {
+    pub name: String,
+    pub index_from: usize,
+    pub index_to: usize,
+}
+
+#[derive(Debug, Clone)]
 pub enum Cons {
     Func {
         name: String,
-        parmeters: Vec<String>,
+        parmeters: Vec<Param>,
         body: Stmt,
+        index_from: usize,
+        index_to: usize,
     },
     Statement {
         stmt: Stmt,
+        index_from: usize,
+        index_to: usize,
     },
 }
 

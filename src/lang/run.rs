@@ -51,37 +51,12 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Range {
-    index_from: usize,
-    index_to: usize,
-}
-
-impl Range {
-    pub fn new(index_from: usize, index_to: usize) -> Self {
-        Range {
-            index_from,
-            index_to,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.index_to - self.index_from
-    }
-
-    pub fn extend(self, other: Range) -> Self {
-        Range {
-            index_from: self.index_from,
-            index_to: other.index_to,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Span<'a> {
     dist: usize,
     source: Run<'a>,
-    range: Range,
+    index_from: usize,
+    index_to: usize,
 }
 
 /// A span represents a contiguous sequence of one or more tokens read from the
@@ -90,26 +65,22 @@ pub struct Span<'a> {
 ///
 impl<'a> Span<'a> {
     pub fn all(&self) -> Tokens<'a> {
-        &self.source.tokens[..self.range.index_to]
+        &self.source.tokens[..self.index_to]
     }
 
     pub fn init(&self) -> Tokens<'a> {
-        &self.source.tokens[..self.range.index_to - 1]
+        &self.source.tokens[..self.index_to - 1]
     }
 
     pub fn last(&self) -> Token<'a> {
-        self.source.tokens[self.range.index_to - 1]
+        self.source.tokens[self.index_to - 1]
     }
 
     pub fn peek_symbol(&self) -> Option<&'a Symbol<'a>> {
         self.source
             .tokens
-            .get(self.range.index_to)
+            .get(self.index_to)
             .map(|token| &token.symbol)
-    }
-
-    pub fn range(&self) -> Range {
-        self.range
     }
 
     pub fn revert(self) -> Run<'a> {
@@ -120,8 +91,16 @@ impl<'a> Span<'a> {
         Run {
             dist: self.source.dist + self.dist,
             tokens: &self.source.tokens,
-            position: self.range.index_to,
+            position: self.index_to,
         }
+    }
+
+    pub fn index_from(&self) -> usize {
+        self.index_from
+    }
+
+    pub fn index_to(&self) -> usize {
+        self.index_to
     }
 }
 
@@ -168,6 +147,10 @@ impl<'a> Run<'a> {
         }
     }
 
+    pub fn position(&self) -> usize {
+        self.position
+    }
+
     fn stream(&self) -> Tokens<'a> {
         &self.tokens[self.position..]
     }
@@ -192,10 +175,8 @@ impl<'a> Run<'a> {
                 *token,
                 Span {
                     dist: 0,
-                    range: Range {
-                        index_from: self.position,
-                        index_to: self.position + 1,
-                    },
+                    index_from: self.position,
+                    index_to: self.position + 1,
                     source: self,
                 },
             )
@@ -217,10 +198,8 @@ impl<'a> Run<'a> {
                     *token,
                     Span {
                         dist,
-                        range: Range {
-                            index_from: self.position,
-                            index_to: self.position + idx + 1,
-                        },
+                        index_from: self.position,
+                        index_to: self.position + idx + 1,
                         source: self,
                     },
                 );
@@ -250,10 +229,8 @@ impl<'a> Run<'a> {
                     value,
                     Span {
                         dist: dist,
-                        range: Range {
-                            index_from: self.position,
-                            index_to: self.position + idx + 1,
-                        },
+                        index_from: self.position,
+                        index_to: self.position + idx + 1,
                         source: self,
                     },
                 );
@@ -272,21 +249,19 @@ impl<'a> Run<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::lang::Lexer;
+
     use super::*;
 
-    // Helper function to create a test token
-    fn make_token(symbol: Symbol<'_>, n: usize) -> Token<'_> {
-        Token {
-            symbol,
-            index_from: n - 1,
-            index_to: n,
-        }
+    fn create_tokens<'a>(input: &'a str) -> Vec<Token<'a>> {
+        let mut lexer = Lexer::new(input);
+        lexer.tokens()
     }
 
     #[test]
     fn test_run_new() {
-        let tokens = &[make_token(Symbol::Identifier("test"), 1)];
-        let run = Run::new(tokens);
+        let tokens = create_tokens("test");
+        let run = Run::new(&tokens);
 
         assert_eq!(run.dist, 0);
         assert_eq!(run.position, 0);
@@ -295,7 +270,7 @@ mod tests {
 
     #[test]
     fn test_run_consume_next1() {
-        let tokens: &[Token] = &[];
+        let tokens = &[];
         let run = Run::new(tokens);
 
         match run.consume_next() {
@@ -306,21 +281,18 @@ mod tests {
 
     #[test]
     fn test_run_consume_next2() {
-        let tokens = &[
-            make_token(Symbol::Identifier("first"), 1),
-            make_token(Symbol::Identifier("second"), 2),
-        ];
-        let run = Run::new(tokens);
+        let tokens = create_tokens("first second");
+        let run = Run::new(&tokens);
 
         match run.consume_next() {
             ReadResult::Some(_, span) => {
                 assert_eq!(span.dist, 0);
-                assert_eq!(span.range.index_from, 0);
-                assert_eq!(span.range.index_to, 1);
+                assert_eq!(span.index_from, 0);
+                assert_eq!(span.index_to, 1);
                 assert_eq!(span.init().len(), 0);
                 assert_eq!(span.last().symbol, Symbol::Identifier("first"));
                 assert_eq!(span.last().index_from, 0);
-                assert_eq!(span.last().index_to, 1);
+                assert_eq!(span.last().index_to, 5);
             }
             ReadResult::None(_) => panic!("Expected Some, got None"),
         }
@@ -328,11 +300,8 @@ mod tests {
 
     #[test]
     fn test_run_read_until_true1() {
-        let tokens = &[
-            make_token(Symbol::Identifier("target"), 1),
-            make_token(Symbol::Identifier("other"), 2),
-        ];
-        let run = Run::new(tokens);
+        let tokens = create_tokens("target other");
+        let run = Run::new(&tokens);
         let deny = Deny::new();
 
         let (token, span) = match run.read_until_true(|&s| s == Symbol::Identifier("target"), deny)
@@ -344,29 +313,39 @@ mod tests {
         assert_eq!(token.symbol, Symbol::Identifier("target"));
         assert_eq!(span.last(), token);
         assert_eq!(span.dist, 0);
-        assert_eq!(span.range.index_from, 0);
-        assert_eq!(span.range.index_to, 1);
+        assert_eq!(span.index_from, 0);
+        assert_eq!(span.index_to, 1);
         assert_eq!(span.init().len(), 0);
 
-        match span.cont().consume_next() {
-            ReadResult::Some(token, span) => {
-                assert_eq!(span.dist, 0);
-                assert_eq!(span.range.index_from, 1);
-                assert_eq!(span.range.index_to, 2);
-                assert_eq!(token.symbol, Symbol::Identifier("other"));
-            }
+        let (token, span) = match span.cont().consume_next() {
+            ReadResult::Some(token, span) => (token, span),
             ReadResult::None(_) => panic!("Expected Some, got None"),
-        }
+        };
+
+        assert_eq!(span.dist, 0);
+        assert_eq!(span.index_from, 1);
+        assert_eq!(span.index_to, 2);
+        assert_eq!(token.symbol, Symbol::Whitespace(" "));
+        assert_eq!(token.index_from, 6);
+        assert_eq!(token.index_to, 7);
+
+        let (token, span) = match span.cont().consume_next() {
+            ReadResult::Some(token, span) => (token, span),
+            ReadResult::None(_) => panic!("Expected Some, got None"),
+        };
+
+        assert_eq!(span.dist, 0);
+        assert_eq!(span.index_from, 2);
+        assert_eq!(span.index_to, 3);
+        assert_eq!(token.symbol, Symbol::Identifier("other"));
+        assert_eq!(token.index_from, 7);
+        assert_eq!(token.index_to, 12);
     }
 
     #[test]
     fn test_run_read_until_true2() {
-        let tokens = &[
-            make_token(Symbol::Identifier("first"), 1),
-            make_token(Symbol::Identifier("target"), 2),
-            make_token(Symbol::Identifier("last"), 3),
-        ];
-        let run = Run::new(tokens);
+        let tokens = create_tokens("first target last");
+        let run = Run::new(&tokens);
         let deny = Deny::new();
 
         let (token, span) = match run.read_until_true(|s| s == &Symbol::Identifier("target"), deny)
@@ -378,8 +357,8 @@ mod tests {
         assert_eq!(token.symbol, Symbol::Identifier("target"));
         assert_eq!(span.last(), token);
         assert_eq!(span.dist, 1);
-        assert_eq!(span.range.index_from, 0);
-        assert_eq!(span.range.index_to, 2);
+        assert_eq!(span.index_from, 0);
+        assert_eq!(span.index_to, 3);
         assert_eq!(span.init().len(), 1);
 
         let first_init_token = span.init().get(0).unwrap();
@@ -391,8 +370,8 @@ mod tests {
         match span.cont().consume_next() {
             ReadResult::Some(token, span) => {
                 assert_eq!(span.dist, 0);
-                assert_eq!(span.range.index_from, 2);
-                assert_eq!(span.range.index_to, 3);
+                assert_eq!(span.index_from, 2);
+                assert_eq!(span.index_to, 3);
                 assert_eq!(token.symbol, Symbol::Identifier("last"));
             }
             ReadResult::None(_) => panic!("Expected Some, got None"),
@@ -401,12 +380,8 @@ mod tests {
 
     #[test]
     fn test_run_read_until_true3() {
-        let tokens = &[
-            make_token(Symbol::Identifier("first"), 1),
-            make_token(Symbol::Identifier("second"), 2),
-            make_token(Symbol::Identifier("target"), 3),
-        ];
-        let run = Run::new(tokens);
+        let tokens = create_tokens("first second target");
+        let run = Run::new(&tokens);
         let deny = Deny::new().insert(Symbol::Identifier("second"));
 
         assert_eq!(run.dist, 0);
@@ -425,12 +400,8 @@ mod tests {
 
     #[test]
     fn test_run_read_until_true4() {
-        let tokens = &[
-            make_token(Symbol::Identifier("first"), 1),
-            make_token(Symbol::Identifier("second"), 2),
-            make_token(Symbol::Identifier("target"), 3),
-        ];
-        let run = Run::new(tokens);
+        let tokens = create_tokens("first second target");
+        let run = Run::new(&tokens);
         let deny = Deny::new().insert(Symbol::Identifier("target"));
 
         assert_eq!(run.dist, 0);
@@ -446,17 +417,14 @@ mod tests {
         assert_eq!(token.symbol, Symbol::Identifier("target"));
         assert_eq!(token.index_from, 2);
         assert_eq!(token.index_to, 3);
-        assert_eq!(span.range.index_from, 0);
-        assert_eq!(span.range.index_to, 3);
+        assert_eq!(span.index_from, 0);
+        assert_eq!(span.index_to, 3);
     }
 
     #[test]
     fn test_run_until_some1() {
-        let tokens = &[
-            make_token(Symbol::Identifier("first"), 1),
-            make_token(Symbol::Identifier("second"), 2),
-        ];
-        let run = Run::new(tokens);
+        let tokens = create_tokens("first second");
+        let run = Run::new(&tokens);
         let deny = Deny::new();
         let pred = |s: &Symbol| match &s {
             Symbol::Identifier(name) if *name == "second" => Some(42),
@@ -471,8 +439,8 @@ mod tests {
         assert_eq!(value, 42);
         assert_eq!(span.last().symbol, Symbol::Identifier("second"));
         assert_eq!(span.dist, 1);
-        assert_eq!(span.range.index_from, 0);
-        assert_eq!(span.range.index_to, 2);
+        assert_eq!(span.index_from, 0);
+        assert_eq!(span.index_to, 2);
         assert_eq!(span.init().len(), 1);
 
         let first_init_token = span.init().get(0).unwrap();

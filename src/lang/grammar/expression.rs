@@ -1,8 +1,4 @@
-use crate::lang::{
-    Expr, Operator, ReadResult, Run, Symbol,
-    parse::ParseResult,
-    run::{Deny, Range},
-};
+use crate::lang::{Expr, Operator, ReadResult, Run, Symbol, parse::ParseResult, run::Deny};
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum Associativity {
@@ -42,7 +38,7 @@ fn is_some_operation(token: &Symbol<'_>) -> Option<(Operator, u8, Associativity)
     }
 }
 
-fn is_argument_list_divider(symbol: &Symbol<'_>) -> Option<Delimiter> {
+fn is_arg_list_delimiter(symbol: &Symbol<'_>) -> Option<Delimiter> {
     match symbol {
         Symbol::Comma => Some(Delimiter::Comma),
         Symbol::RightParen => Some(Delimiter::End),
@@ -50,17 +46,13 @@ fn is_argument_list_divider(symbol: &Symbol<'_>) -> Option<Delimiter> {
     }
 }
 
-fn parse_arg_list_delimited<'a>(
-    run: Run<'a>,
-    deny: &Deny<'a>,
-) -> ParseResult<'a, (Vec<Expr>, Range)> {
+fn parse_arg_list_delimited<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Vec<Expr>> {
     let span = match run.consume_next() {
         ReadResult::Some(token, span) if token.symbol == Symbol::LeftParen => span,
         _ => return ParseResult::Error,
     };
 
     let deny = deny.insert(Symbol::RightParen);
-    let start = span.range();
     let run = span.cont();
 
     // first argument
@@ -103,29 +95,32 @@ fn parse_arg_list_delimited<'a>(
         ReadResult::Some(_, span) => span,
     };
 
-    let end = span.range();
-
-    ParseResult::Success((args, start.extend(end)), span.cont())
+    ParseResult::Success(args, span.cont())
 }
 
 /// Parses an expression that can not be broken down further.
 fn parse_expr_atom<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
+    let index_from = run.position();
+
     let (token, span) = match run.read_until_true(is_expr_symbol, deny) {
         ReadResult::Some(token, span) => (token, span),
         ReadResult::None(_) => return ParseResult::Error,
     };
 
     match token.symbol {
-        Symbol::Number(number_str) => ParseResult::Success(
-            Expr::Literal {
-                value: number_str.parse().unwrap(),
-                range: span.range(),
-            },
-            span.cont(),
-        ),
-        Symbol::LeftParen => {
-            let start = span.range();
+        Symbol::Number(number_str) => {
+            let index_to = span.index_to();
 
+            return ParseResult::Success(
+                Expr::Literal {
+                    value: number_str.parse().unwrap(),
+                    index_from,
+                    index_to,
+                },
+                span.cont(),
+            );
+        }
+        Symbol::LeftParen => {
             let (expr, run) = match parse_expr(span.cont(), &deny.insert(Symbol::RightParen)) {
                 ParseResult::Error => return ParseResult::Error,
                 ParseResult::Success(expr, run) => (expr, run),
@@ -136,40 +131,47 @@ fn parse_expr_atom<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
                 ReadResult::Some(_, span) => span,
             };
 
-            let end = span.range();
+            let index_to = span.index_to();
 
             ParseResult::Success(
                 Expr::Parenthesis {
                     expr: Box::new(expr),
-                    range: start.extend(end),
+                    index_from,
+                    index_to,
                 },
                 span.cont(),
             )
         }
         Symbol::Identifier(ident) if span.peek_symbol() == Some(&Symbol::LeftParen) => {
-            let start = span.range();
-
-            let ((args, range), run) = match parse_arg_list_delimited(span.cont(), &deny) {
+            let (args, run) = match parse_arg_list_delimited(span.cont(), &deny) {
                 ParseResult::Error => return ParseResult::Error,
                 ParseResult::Success(args, run) => (args, run),
             };
+
+            let index_to = run.position();
 
             ParseResult::Success(
                 Expr::Call {
                     function: ident.to_string(),
                     args,
-                    range: start.extend(range),
+                    index_from,
+                    index_to,
                 },
                 run,
             )
         }
-        Symbol::Identifier(ident) => ParseResult::Success(
-            Expr::Variable {
-                identifier: ident.to_string(),
-                range: span.range(),
-            },
-            span.cont(),
-        ),
+        Symbol::Identifier(ident) => {
+            let index_to = span.index_to();
+
+            return ParseResult::Success(
+                Expr::Variable {
+                    identifier: ident.to_string(),
+                    index_from,
+                    index_to,
+                },
+                span.cont(),
+            );
+        }
         _ => unreachable!(),
     }
 }
@@ -183,6 +185,8 @@ fn parse_expr_chain<'a>(run: Run<'a>, deny: &Deny<'a>, min_prec: u8) -> ParseRes
         ParseResult::Success(expr, next) => (expr, next),
         ParseResult::Error => return ParseResult::Error,
     };
+
+    let index_from = lhs.index_from();
 
     loop {
         let (result, span) = match run.read_until_some(is_some_operation, deny) {
@@ -213,13 +217,14 @@ fn parse_expr_chain<'a>(run: Run<'a>, deny: &Deny<'a>, min_prec: u8) -> ParseRes
             }
         };
 
-        let range = lhs.range().extend(rhs.range());
+        let index_to = rhs.index_to();
 
         lhs = Expr::Binary {
             left_hand_side: Box::new(lhs),
             right_hand_side: Box::new(rhs),
             operator: operator,
-            range,
+            index_from,
+            index_to,
         }
     }
 
@@ -397,7 +402,8 @@ mod tests {
         let target = Expr::Binary {
             left_hand_side: Box::new(Expr::Variable {
                 identifier: "a".to_string(),
-                range: Range::new(0, 1),
+                index_from: 0,
+                index_to: 1,
             }),
             right_hand_side: Box::new(Expr::Binary {
                 left_hand_side: Box::new(Expr::Binary {
@@ -405,43 +411,54 @@ mod tests {
                         expr: Box::new(Expr::Binary {
                             left_hand_side: Box::new(Expr::Variable {
                                 identifier: "b".to_string(),
-                                range: Range::new(5, 6),
+                                index_from: 5,
+                                index_to: 6,
                             }),
                             right_hand_side: Box::new(Expr::Literal {
                                 value: 3.0,
-                                range: Range::new(8, 10),
+                                index_from: 8,
+                                index_to: 10,
                             }),
                             operator: Operator::Add,
-                            range: Range::new(5, 10),
+                            index_from: 5,
+                            index_to: 10,
                         }),
-                        range: Range::new(3, 11),
+                        index_from: 3,
+                        index_to: 11,
                     }),
                     right_hand_side: Box::new(Expr::Literal {
                         value: 4.0,
-                        range: Range::new(13, 15),
+                        index_from: 13,
+                        index_to: 15,
                     }),
                     operator: Operator::Multiply,
-                    range: Range::new(3, 15),
+                    index_from: 3,
+                    index_to: 15,
                 }),
                 right_hand_side: Box::new(Expr::Call {
                     function: "foo".to_string(),
                     args: vec![
                         Expr::Literal {
                             value: 2.0,
-                            range: Range::new(20, 21),
+                            index_from: 20,
+                            index_to: 21,
                         },
                         Expr::Variable {
                             identifier: "x".to_string(),
-                            range: Range::new(22, 24),
+                            index_from: 22,
+                            index_to: 24,
                         },
                     ],
-                    range: Range::new(17, 25),
+                    index_from: 17,
+                    index_to: 25,
                 }),
                 operator: Operator::Subtract,
-                range: Range::new(3, 25),
+                index_from: 3,
+                index_to: 25,
             }),
             operator: Operator::Assign,
-            range: Range::new(0, 25),
+            index_from: 0,
+            index_to: 25,
         };
 
         assert_eq!(expr, target);
