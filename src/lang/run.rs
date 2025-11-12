@@ -52,18 +52,18 @@ where
 }
 
 #[derive(Debug)]
-pub struct Span<'a> {
+pub struct Reading<'a> {
     dist: usize,
     source: Run<'a>,
     index_from: usize,
     index_to: usize,
 }
 
-/// A span represents a contiguous sequence of one or more tokens read from the
+/// A reading represents a contiguous sequence of one or more tokens read from the
 /// input stream by a Run instance, ending at the token that satisfied the read
 /// condition.
 ///
-impl<'a> Span<'a> {
+impl<'a> Reading<'a> {
     pub fn all(&self) -> Tokens<'a> {
         &self.source.tokens[..self.index_to]
     }
@@ -87,7 +87,7 @@ impl<'a> Span<'a> {
         self.source
     }
 
-    pub fn cont(self) -> Run<'a> {
+    pub fn resume(self) -> Run<'a> {
         Run {
             dist: self.source.dist + self.dist,
             tokens: &self.source.tokens,
@@ -105,18 +105,11 @@ impl<'a> Span<'a> {
 }
 
 pub enum ReadResult<'a, T> {
-    Some(T, Span<'a>),
+    Some(T, Reading<'a>),
     None(Run<'a>),
 }
 
 impl<'a, T> ReadResult<'a, T> {
-    pub fn unwrap_run(self) -> Run<'a> {
-        match self {
-            ReadResult::Some(_, span) => span.cont(),
-            _ => panic!("Called `unwrap_run` on a `ReadResult` that is not `Some`."),
-        }
-    }
-
     pub fn is_some(&self) -> bool {
         matches!(self, ReadResult::Some(_, _))
     }
@@ -169,11 +162,29 @@ impl<'a> Run<'a> {
     /// containing the next `Symbol` in the stream and a `Span` covering the reading.
     ///
     /// If there are no more tokens to read, a `ReadResult::None` variant is returned.
-    pub fn consume_next(self) -> ReadResult<'a, Token<'a>> {
+    pub fn consume(self) -> ReadResult<'a, Token<'a>> {
         if let Some(token) = self.stream().first() {
             ReadResult::Some(
                 *token,
-                Span {
+                Reading {
+                    dist: 0,
+                    index_from: self.position,
+                    index_to: self.position + 1,
+                    source: self,
+                },
+            )
+        } else {
+            ReadResult::None(self)
+        }
+    }
+
+    pub fn consume_if_true(self, pred: impl Fn(&Symbol<'a>) -> bool) -> ReadResult<'a, Token<'a>> {
+        if let Some(token) = self.stream().first()
+            && pred(&token.symbol)
+        {
+            ReadResult::Some(
+                *token,
+                Reading {
                     dist: 0,
                     index_from: self.position,
                     index_to: self.position + 1,
@@ -196,7 +207,7 @@ impl<'a> Run<'a> {
             if pred(&token.symbol) {
                 return ReadResult::Some(
                     *token,
-                    Span {
+                    Reading {
                         dist,
                         index_from: self.position,
                         index_to: self.position + idx + 1,
@@ -215,7 +226,7 @@ impl<'a> Run<'a> {
         ReadResult::None(self)
     }
 
-    // TODO: rename to read_until_some
+    // TODO: rename to read_where_some
     pub fn read_until_some<T>(
         self,
         pred: impl Fn(&Symbol<'a>) -> Option<T>,
@@ -227,7 +238,7 @@ impl<'a> Run<'a> {
             if let Some(value) = pred(&token.symbol) {
                 return ReadResult::Some(
                     value,
-                    Span {
+                    Reading {
                         dist: dist,
                         index_from: self.position,
                         index_to: self.position + idx + 1,
@@ -255,17 +266,19 @@ mod tests {
 
     fn create_tokens<'a>(input: &'a str) -> Vec<Token<'a>> {
         let mut lexer = Lexer::new(input);
-        lexer.tokens()
+        lexer.collect()
     }
 
     #[test]
     fn test_run_new() {
-        let tokens = create_tokens("test");
+        let tokens = create_tokens("");
         let run = Run::new(&tokens);
 
         assert_eq!(run.dist, 0);
         assert_eq!(run.position, 0);
-        assert_eq!(run.tokens.len(), 1);
+        assert_eq!(run.remaining_input_len(), 1);
+
+        assert_eq!(run.tokens.get(0).unwrap().symbol, Symbol::Eof);
     }
 
     #[test]
@@ -273,7 +286,7 @@ mod tests {
         let tokens = &[];
         let run = Run::new(tokens);
 
-        match run.consume_next() {
+        match run.consume() {
             ReadResult::Some(_, _) => panic!("Expected None, got Some"),
             ReadResult::None(_) => (),
         }
@@ -284,15 +297,15 @@ mod tests {
         let tokens = create_tokens("first second");
         let run = Run::new(&tokens);
 
-        match run.consume_next() {
-            ReadResult::Some(_, span) => {
-                assert_eq!(span.dist, 0);
-                assert_eq!(span.index_from, 0);
-                assert_eq!(span.index_to, 1);
-                assert_eq!(span.init().len(), 0);
-                assert_eq!(span.last().symbol, Symbol::Identifier("first"));
-                assert_eq!(span.last().index_from, 0);
-                assert_eq!(span.last().index_to, 5);
+        match run.consume() {
+            ReadResult::Some(_, reading) => {
+                assert_eq!(reading.dist, 0);
+                assert_eq!(reading.index_from, 0);
+                assert_eq!(reading.index_to, 1);
+                assert_eq!(reading.init().len(), 0);
+                assert_eq!(reading.last().symbol, Symbol::Identifier("first"));
+                assert_eq!(reading.last().index_from, 0);
+                assert_eq!(reading.last().index_to, 5);
             }
             ReadResult::None(_) => panic!("Expected Some, got None"),
         }
@@ -304,39 +317,39 @@ mod tests {
         let run = Run::new(&tokens);
         let deny = Deny::new();
 
-        let (token, span) = match run.read_until_true(|&s| s == Symbol::Identifier("target"), deny)
-        {
-            ReadResult::Some(token, span) => (token, span),
-            ReadResult::None(_) => panic!("Expected Some, got None"),
-        };
+        let (token, reading) =
+            match run.read_until_true(|&s| s == Symbol::Identifier("target"), deny) {
+                ReadResult::Some(token, reading) => (token, reading),
+                ReadResult::None(_) => panic!("Expected Some, got None"),
+            };
 
         assert_eq!(token.symbol, Symbol::Identifier("target"));
-        assert_eq!(span.last(), token);
-        assert_eq!(span.dist, 0);
-        assert_eq!(span.index_from, 0);
-        assert_eq!(span.index_to, 1);
-        assert_eq!(span.init().len(), 0);
+        assert_eq!(reading.last(), token);
+        assert_eq!(reading.dist, 0);
+        assert_eq!(reading.index_from, 0);
+        assert_eq!(reading.index_to, 1);
+        assert_eq!(reading.init().len(), 0);
 
-        let (token, span) = match span.cont().consume_next() {
-            ReadResult::Some(token, span) => (token, span),
+        let (token, reading) = match reading.resume().consume() {
+            ReadResult::Some(token, reading) => (token, reading),
             ReadResult::None(_) => panic!("Expected Some, got None"),
         };
 
-        assert_eq!(span.dist, 0);
-        assert_eq!(span.index_from, 1);
-        assert_eq!(span.index_to, 2);
+        assert_eq!(reading.dist, 0);
+        assert_eq!(reading.index_from, 1);
+        assert_eq!(reading.index_to, 2);
         assert_eq!(token.symbol, Symbol::Whitespace(" "));
         assert_eq!(token.index_from, 6);
         assert_eq!(token.index_to, 7);
 
-        let (token, span) = match span.cont().consume_next() {
-            ReadResult::Some(token, span) => (token, span),
+        let (token, reading) = match reading.resume().consume() {
+            ReadResult::Some(token, reading) => (token, reading),
             ReadResult::None(_) => panic!("Expected Some, got None"),
         };
 
-        assert_eq!(span.dist, 0);
-        assert_eq!(span.index_from, 2);
-        assert_eq!(span.index_to, 3);
+        assert_eq!(reading.dist, 0);
+        assert_eq!(reading.index_from, 2);
+        assert_eq!(reading.index_to, 3);
         assert_eq!(token.symbol, Symbol::Identifier("other"));
         assert_eq!(token.index_from, 7);
         assert_eq!(token.index_to, 12);
@@ -348,34 +361,43 @@ mod tests {
         let run = Run::new(&tokens);
         let deny = Deny::new();
 
-        let (token, span) = match run.read_until_true(|s| s == &Symbol::Identifier("target"), deny)
-        {
-            ReadResult::Some(token, span) => (token, span),
+        let (token, reading) =
+            match run.read_until_true(|s| s == &Symbol::Identifier("target"), deny) {
+                ReadResult::Some(token, reading) => (token, reading),
+                ReadResult::None(_) => panic!("Expected Some, got None"),
+            };
+
+        assert_eq!(token, reading.last());
+        assert_eq!(token.symbol, Symbol::Identifier("target"));
+
+        assert_eq!(reading.dist, 1);
+        assert_eq!(reading.index_from, 0);
+        assert_eq!(reading.index_to, 3);
+
+        let init = reading.init();
+        assert_eq!(init.len(), 2);
+        assert_eq!(init.get(0).unwrap().symbol, Symbol::Identifier("first"));
+        assert_eq!(init.get(1).unwrap().symbol, Symbol::Whitespace(" "));
+
+        let (token, reading) = match reading.resume().consume() {
+            ReadResult::Some(token, reading) => (token, reading),
             ReadResult::None(_) => panic!("Expected Some, got None"),
         };
 
-        assert_eq!(token.symbol, Symbol::Identifier("target"));
-        assert_eq!(span.last(), token);
-        assert_eq!(span.dist, 1);
-        assert_eq!(span.index_from, 0);
-        assert_eq!(span.index_to, 3);
-        assert_eq!(span.init().len(), 1);
+        assert_eq!(reading.dist, 0);
+        assert_eq!(reading.index_from, 3);
+        assert_eq!(reading.index_to, 4);
+        assert_eq!(token.symbol, Symbol::Whitespace(" "));
 
-        let first_init_token = span.init().get(0).unwrap();
-
-        assert_eq!(first_init_token.symbol, Symbol::Identifier("first"));
-        assert_eq!(first_init_token.index_from, 0);
-        assert_eq!(first_init_token.index_to, 1);
-
-        match span.cont().consume_next() {
-            ReadResult::Some(token, span) => {
-                assert_eq!(span.dist, 0);
-                assert_eq!(span.index_from, 2);
-                assert_eq!(span.index_to, 3);
-                assert_eq!(token.symbol, Symbol::Identifier("last"));
-            }
+        let (token, reading) = match reading.resume().consume() {
+            ReadResult::Some(token, reading) => (token, reading),
             ReadResult::None(_) => panic!("Expected Some, got None"),
-        }
+        };
+
+        assert_eq!(reading.dist, 0);
+        assert_eq!(reading.index_from, 4);
+        assert_eq!(reading.index_to, 5);
+        assert_eq!(token.symbol, Symbol::Identifier("last"));
     }
 
     #[test]
@@ -386,7 +408,7 @@ mod tests {
 
         assert_eq!(run.dist, 0);
         assert_eq!(run.position, 0);
-        assert_eq!(run.tokens.len(), 3);
+        assert_eq!(run.tokens.len(), 5);
 
         let run = match run.read_until_true(|s| s == &Symbol::Identifier("target"), deny) {
             ReadResult::Some(_, _) => panic!("Expected None, got Some"),
@@ -395,7 +417,7 @@ mod tests {
 
         assert_eq!(run.dist, 0);
         assert_eq!(run.position, 0);
-        assert_eq!(run.tokens.len(), 3);
+        assert_eq!(run.tokens.len(), 5);
     }
 
     #[test]
@@ -408,17 +430,17 @@ mod tests {
         assert_eq!(run.position, 0);
         assert_eq!(run.tokens.len(), 3);
 
-        let (token, span) = match run.read_until_true(|s| s == &Symbol::Identifier("target"), deny)
-        {
-            ReadResult::Some(token, span) => (token, span),
-            ReadResult::None(_) => panic!("Expected Some, got None"),
-        };
+        let (token, reading) =
+            match run.read_until_true(|s| s == &Symbol::Identifier("target"), deny) {
+                ReadResult::Some(token, reading) => (token, reading),
+                ReadResult::None(_) => panic!("Expected Some, got None"),
+            };
 
         assert_eq!(token.symbol, Symbol::Identifier("target"));
         assert_eq!(token.index_from, 2);
         assert_eq!(token.index_to, 3);
-        assert_eq!(span.index_from, 0);
-        assert_eq!(span.index_to, 3);
+        assert_eq!(reading.index_from, 0);
+        assert_eq!(reading.index_to, 3);
     }
 
     #[test]
@@ -431,25 +453,29 @@ mod tests {
             _ => None,
         };
 
-        let (value, span) = match run.read_until_some(pred, deny) {
-            ReadResult::Some(value, span) => (value, span),
+        let (value, reading) = match run.read_until_some(pred, deny) {
+            ReadResult::Some(value, reading) => (value, reading),
             ReadResult::None(_) => panic!("Expected Some, got None"),
         };
 
         assert_eq!(value, 42);
-        assert_eq!(span.last().symbol, Symbol::Identifier("second"));
-        assert_eq!(span.dist, 1);
-        assert_eq!(span.index_from, 0);
-        assert_eq!(span.index_to, 2);
-        assert_eq!(span.init().len(), 1);
+        assert_eq!(reading.last().symbol, Symbol::Identifier("second"));
+        assert_eq!(reading.dist, 1);
+        assert_eq!(reading.index_from, 0);
+        assert_eq!(reading.index_to, 3);
 
-        let first_init_token = span.init().get(0).unwrap();
+        let init = reading.init();
+        assert_eq!(reading.init().len(), 2);
+        assert_eq!(
+            reading.init().get(0).unwrap().symbol,
+            Symbol::Whitespace(" ")
+        );
+        assert_eq!(
+            reading.init().get(1).unwrap().symbol,
+            Symbol::Identifier("first")
+        );
 
-        assert_eq!(first_init_token.symbol, Symbol::Identifier("first"));
-        assert_eq!(first_init_token.index_from, 0);
-        assert_eq!(first_init_token.index_to, 1);
-
-        let run = span.cont();
+        let run = reading.resume();
 
         assert_eq!(run.remaining_input_len(), 0);
     }

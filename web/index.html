@@ -1,29 +1,32 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  </head>
-  <body>
-    <div class="v-stack gap-small full-height ph pv">
-      <div class="h-stack gap-big baseline">
-        <span id="logo">trtl</span>
-        <select id="select" >
-          <option value="" selected></option>
-          <option value="koch">Koch snowflake</option>
-          <option value="spiral">Spiral</option>
-          <option value="emoji_test">Emoji test</option>
-        </select>
-      </div>
-      <div class="h-stack gap-small flex-1 mh mv">
-        <div id="left" class="h-stack flex-4">
-          <div id="editor" class="flex-1 radius-small elevated"></div>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    </head>
+    <body>
+        <div class="v-stack gap-small full-height ph pv">
+            <div class="h-stack gap-big baseline">
+                <reading id="logo">trtl</reading>
+                <select id="select">
+                    <option value="" selected></option>
+                    <option value="koch">Koch snowflake</option>
+                    <option value="spiral">Spiral</option>
+                    <option value="emoji_test">Emoji test</option>
+                </select>
+            </div>
+            <div class="h-stack gap-small flex-1 mh mv">
+                <div id="left" class="h-stack flex-4">
+                    <div id="editor" class="flex-1 radius-small elevated"></div>
+                </div>
+                <div id="right" class="h-stack flex-5">
+                    <canvas
+                        id="canvas"
+                        class="flex-1 radius-small elevated"
+                    ></canvas>
+                </div>
+            </div>
         </div>
-        <div id="right" class="h-stack flex-5">
-          <canvas id="canvas" class="flex-1 radius-small elevated"></canvas>
-        </div>
-      </div>
-    </div>
-    <script type="module" src="./src/main.ts"></script>
-  </body>
+        <script type="module" src="./src/main.ts"></script>
+    </body>
 </html>

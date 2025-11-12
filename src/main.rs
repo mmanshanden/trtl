@@ -32,7 +32,7 @@ fn main() {
     };
 
     let mut lexer = Lexer::new(&code);
-    let tokens = lexer.tokens();
+    let tokens = lexer.collect();
     let run = Run::new(&tokens);
 
     // let r = parse_program(run);

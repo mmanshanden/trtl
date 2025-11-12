@@ -12,28 +12,28 @@ fn is_cons_symbol(symbol: &Symbol<'_>) -> bool {
 }
 
 fn parse_param<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Param> {
-    let (param, span) = match run.read_until_some(Symbol::identifier, deny) {
-        ReadResult::Some(param, span) => (param, span),
+    let (param, reading) = match run.read_until_some(Symbol::identifier, deny) {
+        ReadResult::Some(param, reading) => (param, reading),
         ReadResult::None(_) => return ParseResult::Error,
     };
 
     let param = Param {
         name: param.to_string(),
-        index_from: span.index_from(),
-        index_to: span.index_to(),
+        index_from: reading.index_from(),
+        index_to: reading.index_to(),
     };
 
-    ParseResult::Success(param, span.cont())
+    ParseResult::Success(param, reading.resume())
 }
 
 fn parse_param_list_delimited<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Vec<Param>> {
-    let span = match run.consume_next() {
-        ReadResult::Some(token, span) if token.symbol == Symbol::LeftParen => span,
-        _ => return ParseResult::Error,
+    let reading = match run.consume_if_true(|&symbol| symbol == Symbol::LeftParen) {
+        ReadResult::Some(_, reading) => reading,
+        ReadResult::None(_) => return ParseResult::Error,
     };
 
     let deny = deny.insert(Symbol::RightParen);
-    let run = span.cont();
+    let run = reading.resume();
 
     // first parameter
     let (params, run) = match parse_param(run.clone(), &deny) {
@@ -46,18 +46,18 @@ fn parse_param_list_delimited<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<
 
             // subsequent arguments
             loop {
-                let span = match run
+                let reading = match run
                     .clone()
                     .read_until_true(|&symbol| symbol == Symbol::Comma, &deny)
                 {
-                    ReadResult::Some(_, span) => span,
+                    ReadResult::Some(_, reading) => reading,
                     ReadResult::None(revert) => {
                         run = revert;
                         break;
                     }
                 };
 
-                match parse_param(span.cont(), &deny) {
+                match parse_param(reading.resume(), &deny) {
                     ParseResult::Error => break,
                     ParseResult::Success(arg, next) => {
                         params.push(arg);
@@ -70,31 +70,31 @@ fn parse_param_list_delimited<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<
         }
     };
 
-    let span = match run.read_until_true(|&symbol| symbol == Symbol::RightParen, deny) {
+    let reading = match run.read_until_true(|&symbol| symbol == Symbol::RightParen, deny) {
         ReadResult::None(_) => return ParseResult::Error,
-        ReadResult::Some(_, span) => span,
+        ReadResult::Some(_, reading) => reading,
     };
 
-    ParseResult::Success(params, span.cont())
+    ParseResult::Success(params, reading.resume())
 }
 
 fn parse_cons<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Cons> {
-    let (token, span) = match run.read_until_true(is_cons_symbol, deny) {
-        ReadResult::Some(token, span) => (token, span),
+    let (token, reading) = match run.read_until_true(is_cons_symbol, deny) {
+        ReadResult::Some(token, reading) => (token, reading),
         ReadResult::None(_) => return ParseResult::Error,
     };
 
     match token.symbol {
         Symbol::Func => {
-            let (name, span) = match span
-                .cont()
+            let (name, reading) = match reading
+                .resume()
                 .read_until_some(Symbol::identifier, &deny.insert(Symbol::LeftBrace))
             {
-                ReadResult::Some(name, span) => (name, span),
+                ReadResult::Some(name, reading) => (name, reading),
                 ReadResult::None(_) => return ParseResult::Error,
             };
 
-            let (params, run) = match parse_param_list_delimited(span.cont(), deny) {
+            let (params, run) = match parse_param_list_delimited(reading.resume(), deny) {
                 ParseResult::Error => return ParseResult::Error,
                 ParseResult::Success(params, run) => (params, run),
             };

@@ -2,8 +2,10 @@ use crate::lang::{
     Expr, ReadResult, Run, Stmt, Symbol,
     grammar::expression::{is_expr_symbol, parse_expr},
     parse::ParseResult,
-    run::{Deny, Span},
+    run::{Deny, Reading},
 };
+
+// let match statements always return runs instead of readings
 
 pub fn is_stmt_symbol(symbol: &Symbol<'_>) -> bool {
     match symbol {
@@ -19,11 +21,53 @@ pub fn is_stmt_symbol(symbol: &Symbol<'_>) -> bool {
     }
 }
 
+fn parse_condition<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
+    let run = match run.consume_if_true(|&symbol| symbol == Symbol::LeftParen) {
+        ReadResult::Some(_, reading) => reading.resume(),
+        _ => return ParseResult::Error,
+    };
+
+    let deny = deny.insert(Symbol::RightParen);
+
+    let (expr, run) = match parse_expr(run, &deny) {
+        ParseResult::Success(expr, next) => (expr, next),
+        ParseResult::Error => return ParseResult::Error,
+    };
+
+    let run = match run.consume() {
+        ReadResult::Some(token, reading) if token.symbol == Symbol::LeftParen => reading.resume(),
+        _ => return ParseResult::Error,
+    };
+
+    ParseResult::Success(expr, run)
+}
+
+fn parse_list_of_stmts<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Vec<Stmt>> {
+    let mut stmts = Vec::new();
+    let mut run = run;
+
+    // parse first statement
+    if let ParseResult::Success(stmt, next) = parse_stmt(run.clone(), deny) {
+        stmts.push(stmt);
+        run = next;
+    }
+
+    let deny = deny.insert(Symbol::SemiColon);
+
+    // parse subsequent statements
+    while let ParseResult::Success(stmt, next) = parse_stmt(run.clone(), &deny) {
+        stmts.push(stmt);
+        run = next;
+    }
+
+    ParseResult::Success(stmts, run)
+}
+
 fn parse_stmt<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Stmt> {
     let index_from = run.position();
 
-    let (token, span) = match run.read_until_true(is_stmt_symbol, deny) {
-        ReadResult::Some(token, span) => (token, span),
+    let (token, reading) = match run.read_until_true(is_stmt_symbol, deny) {
+        ReadResult::Some(token, reading) => (token, reading),
         ReadResult::None(_) => return ParseResult::Error,
     };
 
@@ -31,20 +75,12 @@ fn parse_stmt<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Stmt> {
         Symbol::LeftBrace => {
             let deny = deny.insert(Symbol::RightBrace);
 
-            let mut run = span.cont();
-            let mut body = Vec::new();
-
-            while let ParseResult::Success(stmt, next) = parse_stmt(run.clone(), &deny) {
-                body.push(stmt);
-                run = next;
-            }
-
-            let span = match run.read_until_true(|&token| token == Symbol::RightBrace, deny) {
-                ReadResult::None(_) => return ParseResult::Error,
-                ReadResult::Some(_, span) => span,
+            let (body, run) = match parse_list_of_stmts(reading.resume(), &deny) {
+                ParseResult::Error => return ParseResult::Error,
+                ParseResult::Success(body, next) => (body, next),
             };
 
-            let index_to = span.index_to();
+            let index_to = run.position();
 
             ParseResult::Success(
                 Stmt::Block {
@@ -52,23 +88,59 @@ fn parse_stmt<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Stmt> {
                     index_from,
                     index_to,
                 },
-                span.cont(),
+                run,
+            )
+        }
+        Symbol::If => {
+            let (condition, run) = match parse_condition(reading.resume(), deny) {
+                ParseResult::Error => return ParseResult::Error,
+                ParseResult::Success(expr, next) => (expr, next),
+            };
+
+            let (body, run) = match parse_stmt(run, &deny.insert(Symbol::Else)) {
+                ParseResult::Error => return ParseResult::Error,
+                ParseResult::Success(stmt, next) => (stmt, next),
+            };
+
+            let (run, alternate) = match run.consume_if_true(|&symbol| symbol == Symbol::Else) {
+                ReadResult::Some(_, reading) => {
+                    let (else_stmt, run) = match parse_stmt(reading.resume(), deny) {
+                        ParseResult::Error => return ParseResult::Error,
+                        ParseResult::Success(stmt, run) => (stmt, run),
+                    };
+
+                    (run, Some(Box::new(else_stmt)))
+                }
+                ReadResult::None(run) => (run, None),
+            };
+
+            let index_to = run.position();
+
+            ParseResult::Success(
+                Stmt::If {
+                    condition,
+                    body: Box::new(body),
+                    alternate,
+                    index_from,
+                    index_to,
+                },
+                run,
             )
         }
         Symbol::LeftParen | Symbol::Identifier(_) | Symbol::Number(_) => {
             let deny = deny.insert(Symbol::SemiColon);
 
-            let (expr, run) = match parse_expr(span.revert(), &deny) {
+            let (expr, run) = match parse_expr(reading.revert(), &deny) {
                 ParseResult::Error => return ParseResult::Error,
                 ParseResult::Success(expr, next) => (expr, next),
             };
 
-            let span = match run.read_until_true(|&token| token == Symbol::SemiColon, deny) {
+            let run = match run.read_until_true(|&token| token == Symbol::SemiColon, deny) {
                 ReadResult::None(_) => return ParseResult::Error,
-                ReadResult::Some(_, span) => span,
+                ReadResult::Some(_, reading) => reading.resume(),
             };
 
-            let index_to = span.index_to();
+            let index_to = run.position();
 
             ParseResult::Success(
                 Stmt::Expression {
@@ -76,7 +148,7 @@ fn parse_stmt<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Stmt> {
                     index_from,
                     index_to,
                 },
-                span.cont(),
+                run,
             )
         }
         _ => unreachable!(),
@@ -91,7 +163,7 @@ mod tests {
 
     fn create_tokens<'a>(input: &'a str) -> Vec<Token<'a>> {
         let mut lexer = Lexer::new(input);
-        lexer.tokens()
+        lexer.collect()
     }
 
     #[test]

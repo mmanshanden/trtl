@@ -158,6 +158,7 @@ impl<'a> Token<'a> {
             Symbol::Whitespace(_) => true,
             Symbol::Comment(_) => true,
             Symbol::LineBreak => true,
+            Symbol::Eof => true,
             _ => false,
         }
     }
@@ -282,6 +283,24 @@ impl<'a> Lexer<'a> {
         &self.input[start..self.pos.byte]
     }
 
+    fn read_comment(&mut self) -> &'a str {
+        let start = self.pos.byte;
+
+        loop {
+            if self.current_char.is_none() {
+                break;
+            }
+
+            if self.is_newline() {
+                break;
+            }
+
+            self.advance();
+        }
+
+        &self.input[start..self.pos.byte]
+    }
+
     fn read_identifier(&mut self) -> &'a str {
         let start = self.pos.byte;
 
@@ -358,7 +377,14 @@ impl<'a> Lexer<'a> {
             }
             b'/' => {
                 self.advance();
-                Symbol::Divide
+
+                if let Some(&b'/') = self.current_char {
+                    self.advance();
+                    let comment = self.read_comment();
+                    Symbol::Comment(comment)
+                } else {
+                    Symbol::Divide
+                }
             }
             b'=' => {
                 self.advance();
@@ -459,16 +485,105 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn tokens(&mut self) -> Vec<Token<'a>> {
+    pub fn collect(&mut self) -> Vec<Token<'a>> {
         let mut vec = Vec::new();
-        let mut reading = self.next_token();
+        let mut token = self.next_token();
 
-        while reading.symbol != Symbol::Eof {
-            vec.push(reading);
-            reading = self.next_token();
+        while token.symbol != Symbol::Eof {
+            vec.push(token);
+            token = self.next_token();
         }
 
-        vec.push(reading);
+        vec.push(token);
         vec
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_identifier_and_number() {
+        let mut lexer = Lexer::new("foo 123");
+        let tokens = lexer.collect();
+        // Expect: Identifier("foo"), Whitespace(" "), Number("123"), Eof
+        assert_eq!(tokens.len(), 4);
+        assert_eq!(tokens[0].identifier(), Some("foo"));
+        assert_eq!(tokens[2].number(), Some("123"));
+
+        // indices: "foo" starts at 0..3, whitespace 3..4, number 4..7
+        assert_eq!(tokens[0].index_from, 0);
+        assert_eq!(tokens[0].index_to, 3);
+        assert_eq!(tokens[1].index_from, 3);
+        assert_eq!(tokens[1].index_to, 4);
+        assert_eq!(tokens[2].index_from, 4);
+        assert_eq!(tokens[2].index_to, 7);
+    }
+
+    #[test]
+    fn test_whitespace_tokens() {
+        let mut lexer = Lexer::new("a \n// comment\n42");
+        let tokens = lexer.collect();
+
+        assert_eq!(tokens[0].symbol, Symbol::Identifier("a"));
+        assert_eq!(tokens[5].symbol, Symbol::Number("42"));
+
+        assert!(tokens[1].is_whitespace()); // the space
+        assert!(tokens[2].is_whitespace()); // the newline
+        assert!(tokens[3].is_whitespace()); // the comment
+        assert!(tokens[4].is_whitespace()); // the newline
+        assert!(!tokens[0].is_whitespace()); // identifier "a"
+        assert!(!tokens[5].is_whitespace()); // number "42"
+    }
+
+    #[test]
+    fn test_operators_and_punctuators() {
+        let input = "== != >= <= = ! > < ; + - * / ( ) { } ,";
+
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.collect();
+        let symbols: Vec<Symbol> = tokens
+            .iter()
+            .filter(|token| !token.is_whitespace())
+            .map(|t| t.symbol)
+            .collect();
+
+        let expected = vec![
+            Symbol::Equals,
+            Symbol::NotEqual,
+            Symbol::GreaterEqualThan,
+            Symbol::LessEqualThan,
+            Symbol::Assign,
+            Symbol::Bang,
+            Symbol::GreaterThan,
+            Symbol::LessThan,
+            Symbol::SemiColon,
+            Symbol::Plus,
+            Symbol::Minus,
+            Symbol::Multiply,
+            Symbol::Divide,
+            Symbol::LeftParen,
+            Symbol::RightParen,
+            Symbol::LeftBrace,
+            Symbol::RightBrace,
+            Symbol::Comma,
+        ];
+
+        assert_eq!(symbols.len(), expected.len());
+        for (got, exp) in symbols.iter().zip(expected.iter()) {
+            assert_eq!(got, exp);
+        }
+    }
+
+    #[test]
+    fn test_undefined_and_linebreak() {
+        let mut lexer = Lexer::new("@\n");
+        let tokens = lexer.collect();
+
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0].symbol, Symbol::Undefined("@"));
+        assert_eq!(tokens[1].symbol, Symbol::LineBreak);
+        assert_eq!(tokens[2].symbol, Symbol::Eof);
     }
 }

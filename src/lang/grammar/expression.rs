@@ -47,13 +47,13 @@ fn is_arg_list_delimiter(symbol: &Symbol<'_>) -> Option<Delimiter> {
 }
 
 fn parse_arg_list_delimited<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Vec<Expr>> {
-    let span = match run.consume_next() {
-        ReadResult::Some(token, span) if token.symbol == Symbol::LeftParen => span,
+    let reading = match run.consume() {
+        ReadResult::Some(token, reading) if token.symbol == Symbol::LeftParen => reading,
         _ => return ParseResult::Error,
     };
 
     let deny = deny.insert(Symbol::RightParen);
-    let run = span.cont();
+    let run = reading.resume();
 
     // first argument
     let (args, run) = match parse_expr(run.clone(), &deny) {
@@ -66,18 +66,18 @@ fn parse_arg_list_delimited<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a
 
             // subsequent arguments
             loop {
-                let span = match run
+                let reading = match run
                     .clone()
                     .read_until_true(|&symbol| symbol == Symbol::Comma, &deny)
                 {
-                    ReadResult::Some(_, span) => span,
+                    ReadResult::Some(_, reading) => reading,
                     ReadResult::None(revert) => {
                         run = revert;
                         break;
                     }
                 };
 
-                match parse_expr(span.cont(), &deny) {
+                match parse_expr(reading.resume(), &deny) {
                     ParseResult::Error => break,
                     ParseResult::Success(arg, next) => {
                         args.push(arg);
@@ -90,26 +90,26 @@ fn parse_arg_list_delimited<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a
         }
     };
 
-    let span = match run.read_until_true(|&symbol| symbol == Symbol::RightParen, deny) {
+    let reading = match run.read_until_true(|&symbol| symbol == Symbol::RightParen, deny) {
         ReadResult::None(_) => return ParseResult::Error,
-        ReadResult::Some(_, span) => span,
+        ReadResult::Some(_, reading) => reading,
     };
 
-    ParseResult::Success(args, span.cont())
+    ParseResult::Success(args, reading.resume())
 }
 
 /// Parses an expression that can not be broken down further.
 fn parse_expr_atom<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
     let index_from = run.position();
 
-    let (token, span) = match run.read_until_true(is_expr_symbol, deny) {
-        ReadResult::Some(token, span) => (token, span),
+    let (token, reading) = match run.read_until_true(is_expr_symbol, deny) {
+        ReadResult::Some(token, reading) => (token, reading),
         ReadResult::None(_) => return ParseResult::Error,
     };
 
     match token.symbol {
         Symbol::Number(number_str) => {
-            let index_to = span.index_to();
+            let index_to = reading.index_to();
 
             return ParseResult::Success(
                 Expr::Literal {
@@ -117,21 +117,21 @@ fn parse_expr_atom<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
                     index_from,
                     index_to,
                 },
-                span.cont(),
+                reading.resume(),
             );
         }
         Symbol::LeftParen => {
-            let (expr, run) = match parse_expr(span.cont(), &deny.insert(Symbol::RightParen)) {
+            let (expr, run) = match parse_expr(reading.resume(), &deny.insert(Symbol::RightParen)) {
                 ParseResult::Error => return ParseResult::Error,
                 ParseResult::Success(expr, run) => (expr, run),
             };
 
-            let span = match run.read_until_true(|token| token == &Symbol::RightParen, deny) {
+            let reading = match run.read_until_true(|token| token == &Symbol::RightParen, deny) {
                 ReadResult::None(_) => return ParseResult::Error,
-                ReadResult::Some(_, span) => span,
+                ReadResult::Some(_, reading) => reading,
             };
 
-            let index_to = span.index_to();
+            let index_to = reading.index_to();
 
             ParseResult::Success(
                 Expr::Parenthesis {
@@ -139,11 +139,11 @@ fn parse_expr_atom<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
                     index_from,
                     index_to,
                 },
-                span.cont(),
+                reading.resume(),
             )
         }
-        Symbol::Identifier(ident) if span.peek_symbol() == Some(&Symbol::LeftParen) => {
-            let (args, run) = match parse_arg_list_delimited(span.cont(), &deny) {
+        Symbol::Identifier(ident) if reading.peek_symbol() == Some(&Symbol::LeftParen) => {
+            let (args, run) = match parse_arg_list_delimited(reading.resume(), &deny) {
                 ParseResult::Error => return ParseResult::Error,
                 ParseResult::Success(args, run) => (args, run),
             };
@@ -161,7 +161,7 @@ fn parse_expr_atom<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
             )
         }
         Symbol::Identifier(ident) => {
-            let index_to = span.index_to();
+            let index_to = reading.index_to();
 
             return ParseResult::Success(
                 Expr::Variable {
@@ -169,7 +169,7 @@ fn parse_expr_atom<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
                     index_from,
                     index_to,
                 },
-                span.cont(),
+                reading.resume(),
             );
         }
         _ => unreachable!(),
@@ -189,18 +189,18 @@ fn parse_expr_chain<'a>(run: Run<'a>, deny: &Deny<'a>, min_prec: u8) -> ParseRes
     let index_from = lhs.index_from();
 
     loop {
-        let (result, span) = match run.read_until_some(is_some_operation, deny) {
+        let (result, reading) = match run.read_until_some(is_some_operation, deny) {
             ReadResult::None(run) => return ParseResult::Success(lhs, run),
-            ReadResult::Some(result, span) => (result, span),
+            ReadResult::Some(result, reading) => (result, reading),
         };
 
         let (operator, prec, assoc) = result;
 
         if prec < min_prec {
-            run = span.revert();
+            run = reading.revert();
             break;
         } else {
-            run = span.cont();
+            run = reading.resume();
         }
 
         let new_min_prec = if assoc == Associativity::Left {
@@ -243,7 +243,7 @@ mod tests {
 
     fn create_tokens<'a>(input: &'a str) -> Vec<Token<'a>> {
         let mut lexer = Lexer::new(input);
-        lexer.tokens()
+        lexer.collect()
     }
 
     #[test]
