@@ -129,6 +129,29 @@ fn parse_stmt<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Stmt> {
                 run,
             )
         }
+        Symbol::While => {
+            let (condition, run) = match parse_condition(reading.cont(), deny) {
+                ParseResult::Error => return ParseResult::Error,
+                ParseResult::Success(expr, next) => (expr, next),
+            };
+
+            let (body, run) = match parse_stmt(run, &deny.insert(Symbol::Else)) {
+                ParseResult::Error => return ParseResult::Error,
+                ParseResult::Success(stmt, next) => (stmt, next),
+            };
+
+            let index_to = run.position();
+
+            ParseResult::Success(
+                Stmt::While {
+                    condition,
+                    body: Box::new(body),
+                    index_from,
+                    index_to,
+                },
+                run,
+            )
+        }
         Symbol::LeftParen | Symbol::Identifier(_) | Symbol::Number(_) => {
             let deny = deny.insert(Symbol::SemiColon);
 

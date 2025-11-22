@@ -35,7 +35,7 @@ fn main() {
     let tokens = lexer.collect();
     let run = Run::new(&tokens);
 
-    // let r = parse_program(run);
+    let r = parse_program(run);
 
     // println!("Parse result: {:?}", r);
 

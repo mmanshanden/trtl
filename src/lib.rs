@@ -1,3 +1,3 @@
 mod lang;
-// mod wasm;
 mod machine;
+mod wasm;

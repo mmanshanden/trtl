@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::ast::{Entry, *};
+use super::ast::*;
 use crate::machine::cpu::Op;
 
 #[derive(Clone, Copy, Debug)]
@@ -34,13 +34,7 @@ pub enum CompileError {
 
 type CompileResult = Result<(Vec<Op>, Ptr, Allocs), CompileError>;
 
-fn compile_call(
-    func: String,
-    args: Vec<Expr>,
-    env: &mut Env,
-    ptr: Ptr,
-    scope: impl Scope,
-) -> CompileResult {
+fn compile_call(func: String, args: Vec<Expr>, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult {
     let mut allocs = 0;
     let mut ptr = ptr;
     let mut code = Vec::new();
@@ -70,14 +64,7 @@ fn compile_call(
     Ok((code, ptr, allocs))
 }
 
-fn compile_binary_expr(
-    e1: Expr,
-    e2: Expr,
-    operand: Op,
-    env: &mut Env,
-    ptr: Ptr,
-    scope: impl Scope,
-) -> CompileResult {
+fn compile_binary_expr(e1: Expr, e2: Expr, operand: Op, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult {
     let (c1, ptr1, as1) = compile_expr(e1, env, ptr, scope)?;
     let (c2, ptr2, as2) = compile_expr(e2, env, ptr1, scope)?;
 
@@ -91,12 +78,12 @@ fn compile_binary_expr(
 
 fn compile_expr(expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult {
     return match expr {
-        Expr::NumericLiteral { value, .. } => {
+        Expr::Literal { value, .. } => {
             let n = value.to_bits();
             Ok((vec![Op::PushF(n)], ptr, 0))
         }
-        Expr::ParenthesizedExpression { expr, .. } => compile_expr(*expr, env, ptr, scope),
-        Expr::BinaryExpression {
+        Expr::Parenthesis { expr, .. } => compile_expr(*expr, env, ptr, scope),
+        Expr::Binary {
             left_hand_side: left,
             right_hand_side: right,
             operator,
@@ -106,7 +93,7 @@ fn compile_expr(expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> Compi
                 let (mut code, mut ptr, mut allocs) = compile_expr(*right, env, ptr, scope)?;
 
                 let identifier = match *left {
-                    Expr::VariableValue { identifier: v, .. } => v,
+                    Expr::Variable { identifier: v, .. } => v,
                     _ => return Err(CompileError::UndefinedAssignment),
                 };
 
@@ -138,23 +125,17 @@ fn compile_expr(expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> Compi
             Operator::NotEqual => compile_binary_expr(*left, *right, Op::Neq, env, ptr, scope),
             Operator::GreaterThan => compile_binary_expr(*left, *right, Op::Gt, env, ptr, scope),
             Operator::LessThan => compile_binary_expr(*left, *right, Op::Lt, env, ptr, scope),
-            Operator::GreaterEqualThan => {
-                compile_binary_expr(*left, *right, Op::Gte, env, ptr, scope)
-            }
+            Operator::GreaterEqualThan => compile_binary_expr(*left, *right, Op::Gte, env, ptr, scope),
             Operator::LessEqualThan => compile_binary_expr(*left, *right, Op::Lte, env, ptr, scope),
         },
-        Expr::VariableValue { identifier: v, .. } => match env.get(&v) {
+        Expr::Variable { identifier: v, .. } => match env.get(&v) {
             None => Err(CompileError::UndefinedVariable(v)),
             Some(l) => match l {
                 Loc::Global(a) => Ok((vec![Op::LoadG(*a)], ptr, 0)),
                 Loc::Local(a) => Ok((vec![Op::LoadL(*a)], ptr, 0)),
             },
         },
-        Expr::FunctionCall {
-            args,
-            function: func,
-            ..
-        } => compile_call(func, args, env, ptr, scope),
+        Expr::Call { args, function: func, .. } => compile_call(func, args, env, ptr, scope),
     };
 }
 
@@ -190,14 +171,7 @@ fn compile_if(cond: Expr, body: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope
     Ok((code, ptr, a1 + a2))
 }
 
-fn compile_ifelse(
-    cond: Expr,
-    b1: Stmt,
-    b2: Stmt,
-    env: &mut Env,
-    ptr: Ptr,
-    scope: impl Scope,
-) -> CompileResult {
+fn compile_ifelse(cond: Expr, b1: Stmt, b2: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult {
     let mut code = Vec::new();
 
     let (e1, ptr, a1) = compile_expr(cond, env, ptr, scope)?;
@@ -213,13 +187,7 @@ fn compile_ifelse(
     Ok((code, ptr, i32::max(a1 + a2, a1 + a3)))
 }
 
-fn compile_while(
-    cond: Expr,
-    stmt: Stmt,
-    env: &mut Env,
-    ptr: Ptr,
-    scope: impl Scope,
-) -> CompileResult {
+fn compile_while(cond: Expr, stmt: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult {
     let mut code = Vec::new();
 
     let (expr, ptr, a1) = compile_expr(cond, env, ptr, scope)?;
@@ -233,14 +201,7 @@ fn compile_while(
     Ok((code, ptr, a1 + a2))
 }
 
-fn compile_func(
-    name: String,
-    args: Vec<String>,
-    stmt: Stmt,
-    env: &mut Env,
-    ptr: Ptr,
-    scope: impl Scope,
-) -> CompileResult {
+fn compile_func(name: String, args: Vec<&String>, stmt: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult {
     let mut code = Vec::new();
     let mut inner_env = env.clone();
     let mut inner_ptr = -3;
@@ -248,7 +209,7 @@ fn compile_func(
     for arg in args {
         let loc = scope.to_loc(inner_ptr);
 
-        inner_env.insert(arg, loc);
+        inner_env.insert(arg.clone(), loc);
         inner_ptr -= 1;
     }
 
@@ -279,13 +240,7 @@ fn compile_ret(expr: Option<Expr>, env: &mut Env, ptr: Ptr, scope: impl Scope) -
     Ok((vec![Op::Ret], ptr, 0))
 }
 
-fn compile_command(
-    op: Op,
-    expr: Expr,
-    env: &mut Env,
-    ptr: Ptr,
-    scope: impl Scope,
-) -> CompileResult {
+fn compile_command(op: Op, expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult {
     let mut code = Vec::new();
 
     let (expr, ptr, allocs) = compile_expr(expr, env, ptr, scope)?;
@@ -309,23 +264,34 @@ fn compile_expr_stmt(expr: Expr, env: &mut Env, ptr: Ptr, scope: impl Scope) -> 
 
 fn compile_stmt(stmt: Stmt, env: &mut Env, ptr: Ptr, scope: impl Scope) -> CompileResult {
     match stmt {
-        Stmt::Scope(seq) => compile_seq(seq, env, ptr, scope),
-        Stmt::Return(expr) => compile_ret(expr, env, ptr, scope),
-        Stmt::Expr(expr) => compile_expr_stmt(expr, env, ptr, scope),
-        Stmt::If(cond, stmt) => compile_if(cond, *stmt, env, ptr, scope),
-        Stmt::IfElse(cond, b1, b2) => compile_ifelse(cond, *b1, *b2, env, ptr, scope),
-        Stmt::While(cond, stmt) => compile_while(cond, *stmt, env, ptr, scope),
+        Stmt::Block { body, .. } => compile_seq(body, env, ptr, scope),
+        // Stmt(expr) => compile_ret(expr, env, ptr, scope),
+        Stmt::Expression { expr, .. } => compile_expr_stmt(expr, env, ptr, scope),
+        Stmt::If {
+            condition,
+            body,
+            alternate,
+            ..
+        } => match alternate {
+            None => compile_if(condition, *body, env, ptr, scope),
+            Some(alternate) => compile_ifelse(condition, *body, *alternate, env, ptr, scope),
+        },
+        Stmt::While { condition, body, .. } => compile_while(condition, *body, env, ptr, scope),
         // Stmt::Print(expr) => compile_command(Op::Print, expr, env, ptr, scope),
-        Stmt::Forward(expr) => compile_command(Op::Movf, expr, env, ptr, scope),
-        Stmt::Left(expr) => compile_command(Op::Movl, expr, env, ptr, scope),
-        Stmt::Right(expr) => compile_command(Op::Movr, expr, env, ptr, scope),
+        Stmt::Move { direction, argument, .. } => match direction {
+            MoveDirection::MoveForward => compile_command(Op::Movf, argument, env, ptr, scope),
+            MoveDirection::TurnLeft => compile_command(Op::Movl, argument, env, ptr, scope),
+            MoveDirection::TurnRight => compile_command(Op::Movr, argument, env, ptr, scope),
+        },
     }
 }
 
-fn compile_entry(entry: Entry, env: &mut Env, ptr: Ptr) -> CompileResult {
+fn compile_cons(entry: Cons, env: &mut Env, ptr: Ptr) -> CompileResult {
     match entry {
-        Entry::Func(name, args, stmt) => compile_func(name, args, stmt, env, ptr, Loc::Local),
-        Entry::Stmt(stmt) => compile_stmt(stmt, env, ptr, Loc::Global),
+        Cons::Func {
+            name, parameters, body, ..
+        } => compile_func(name, parameters.iter().map(|p| &p.name).collect(), body, env, ptr, Loc::Local),
+        Cons::Statement { stmt, .. } => compile_stmt(stmt, env, ptr, Loc::Global),
     }
 }
 
@@ -336,8 +302,8 @@ pub fn compile(program: Program) -> Result<Vec<Op>, CompileError> {
     let mut ptr = 0;
     let mut allocs = 0;
 
-    for entry in program {
-        let (ops, p, a) = compile_entry(entry, &mut env, ptr)?;
+    for cons in program {
+        let (ops, p, a) = compile_cons(cons, &mut env, ptr)?;
 
         body.extend(ops);
 

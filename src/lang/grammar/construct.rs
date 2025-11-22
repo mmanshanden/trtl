@@ -111,3 +111,16 @@ fn parse_cons<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Cons> {
         _ => unreachable!(),
     }
 }
+
+pub fn parse_program<'a>(run: Run<'a>) -> ParseResult<'a, Vec<Cons>> {
+    let mut cons = Vec::new();
+    let mut run = run;
+    let deny = Deny::new();
+
+    while let ParseResult::Success(con, next) = parse_cons(run.clone(), &deny) {
+        cons.push(con);
+        run = next;
+    }
+
+    ParseResult::Success(cons, run)
+}

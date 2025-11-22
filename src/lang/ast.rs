@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::{Symbol, lex::Tokens};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MoveDirection {
     MoveForward,
     TurnLeft,
@@ -104,6 +104,12 @@ pub enum Stmt {
         index_from: usize,
         index_to: usize,
     },
+    While {
+        condition: Expr,
+        body: Box<Stmt>,
+        index_from: usize,
+        index_to: usize,
+    },
     Move {
         argument: Expr,
         direction: MoveDirection,
@@ -119,15 +125,7 @@ pub enum Stmt {
         expr: Expr,
         index_from: usize,
         index_to: usize,
-    }, // If(Expr, Box<Stmt>),
-       // IfElse(Expr, Box<Stmt>, Box<Stmt>),
-       // While(Expr, Box<Stmt>),
-       // Forward(Expr),
-       // Left(Expr),
-       // Right(Expr),
-       // Scope(Vec<Stmt>),
-       // Expr(Expr),
-       // Return(Option<Expr>),
+    },
 }
 
 #[derive(Debug, Clone)]

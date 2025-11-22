@@ -55,7 +55,7 @@ fn token_to_string(token: Symbol) -> String {
 }
 
 pub fn highlight(input: &str) -> Highlight {
-    let tokens = Lexer::new(input).tokens();
+    let tokens = Lexer::new(input).collect();
     let run = Run::new(&tokens);
 
     let tags = match parse_program(run) {
@@ -142,10 +142,7 @@ pub fn highlight(input: &str) -> Highlight {
                     hint: 0,
                 });
             }
-            Marker::UnexpectedToken {
-                expected: _,
-                actual,
-            } => {
+            Marker::UnexpectedToken { expected: _, actual } => {
                 for &token in actual {
                     line.push(Fragment {
                         value: token_to_string(token),
@@ -159,8 +156,5 @@ pub fn highlight(input: &str) -> Highlight {
 
     lines.push(line);
 
-    Highlight {
-        lines,
-        hints: Vec::new(),
-    }
+    Highlight { lines, hints: Vec::new() }
 }
