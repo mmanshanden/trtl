@@ -1,4 +1,14 @@
+use crate::lang::lex::Tokens;
+
 use super::run::Run;
+
+#[derive(Debug, Clone)]
+struct Diagnostic<'a> {
+    tokens: Tokens<'a>,
+    message: String,
+}
+
+type Diagnostics<'a> = Vec<Diagnostic<'a>>;
 
 #[derive(Debug, Clone)]
 pub enum ParseResult<'a, T> {

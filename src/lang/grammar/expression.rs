@@ -48,12 +48,12 @@ fn is_arg_list_delimiter(symbol: &Symbol<'_>) -> Option<Delimiter> {
 
 fn parse_arg_list_delimited<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Vec<Expr>> {
     let reading = match run.consume() {
-        ReadResult::Some(token, reading) if token.symbol == Symbol::LeftParen => reading,
+        ReadResult::Some(_, reading) if reading.symbol() == &Symbol::LeftParen => reading,
         _ => return ParseResult::Error,
     };
 
     let deny = deny.insert(Symbol::RightParen);
-    let run = reading.resume();
+    let run = reading.cont();
 
     // first argument
     let (args, run) = match parse_expr(run.clone(), &deny) {
@@ -68,7 +68,7 @@ fn parse_arg_list_delimited<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a
             loop {
                 let reading = match run
                     .clone()
-                    .read_until_true(|&symbol| symbol == Symbol::Comma, &deny)
+                    .read_where_true(|&symbol| symbol == Symbol::Comma, &deny)
                 {
                     ReadResult::Some(_, reading) => reading,
                     ReadResult::None(revert) => {
@@ -77,7 +77,7 @@ fn parse_arg_list_delimited<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a
                     }
                 };
 
-                match parse_expr(reading.resume(), &deny) {
+                match parse_expr(reading.cont(), &deny) {
                     ParseResult::Error => break,
                     ParseResult::Success(arg, next) => {
                         args.push(arg);
@@ -90,24 +90,24 @@ fn parse_arg_list_delimited<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a
         }
     };
 
-    let reading = match run.read_until_true(|&symbol| symbol == Symbol::RightParen, deny) {
+    let reading = match run.read_where_true(|&symbol| symbol == Symbol::RightParen, deny) {
         ReadResult::None(_) => return ParseResult::Error,
         ReadResult::Some(_, reading) => reading,
     };
 
-    ParseResult::Success(args, reading.resume())
+    ParseResult::Success(args, reading.cont())
 }
 
 /// Parses an expression that can not be broken down further.
 fn parse_expr_atom<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
     let index_from = run.position();
 
-    let (token, reading) = match run.read_until_true(is_expr_symbol, deny) {
-        ReadResult::Some(token, reading) => (token, reading),
+    let reading = match run.read_where_true(is_expr_symbol, deny) {
+        ReadResult::Some(_, reading) => reading,
         ReadResult::None(_) => return ParseResult::Error,
     };
 
-    match token.symbol {
+    match reading.symbol() {
         Symbol::Number(number_str) => {
             let index_to = reading.index_to();
 
@@ -117,16 +117,16 @@ fn parse_expr_atom<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
                     index_from,
                     index_to,
                 },
-                reading.resume(),
+                reading.cont(),
             );
         }
         Symbol::LeftParen => {
-            let (expr, run) = match parse_expr(reading.resume(), &deny.insert(Symbol::RightParen)) {
+            let (expr, run) = match parse_expr(reading.cont(), &deny.insert(Symbol::RightParen)) {
                 ParseResult::Error => return ParseResult::Error,
                 ParseResult::Success(expr, run) => (expr, run),
             };
 
-            let reading = match run.read_until_true(|token| token == &Symbol::RightParen, deny) {
+            let reading = match run.read_where_true(|token| token == &Symbol::RightParen, deny) {
                 ReadResult::None(_) => return ParseResult::Error,
                 ReadResult::Some(_, reading) => reading,
             };
@@ -139,11 +139,11 @@ fn parse_expr_atom<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
                     index_from,
                     index_to,
                 },
-                reading.resume(),
+                reading.cont(),
             )
         }
         Symbol::Identifier(ident) if reading.peek_symbol() == Some(&Symbol::LeftParen) => {
-            let (args, run) = match parse_arg_list_delimited(reading.resume(), &deny) {
+            let (args, run) = match parse_arg_list_delimited(reading.cont(), &deny) {
                 ParseResult::Error => return ParseResult::Error,
                 ParseResult::Success(args, run) => (args, run),
             };
@@ -169,7 +169,7 @@ fn parse_expr_atom<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
                     index_from,
                     index_to,
                 },
-                reading.resume(),
+                reading.cont(),
             );
         }
         _ => unreachable!(),
@@ -189,7 +189,7 @@ fn parse_expr_chain<'a>(run: Run<'a>, deny: &Deny<'a>, min_prec: u8) -> ParseRes
     let index_from = lhs.index_from();
 
     loop {
-        let (result, reading) = match run.read_until_some(is_some_operation, deny) {
+        let (result, reading) = match run.read_where_some(is_some_operation, deny) {
             ReadResult::None(run) => return ParseResult::Success(lhs, run),
             ReadResult::Some(result, reading) => (result, reading),
         };
@@ -200,7 +200,7 @@ fn parse_expr_chain<'a>(run: Run<'a>, deny: &Deny<'a>, min_prec: u8) -> ParseRes
             run = reading.revert();
             break;
         } else {
-            run = reading.resume();
+            run = reading.cont();
         }
 
         let new_min_prec = if assoc == Associativity::Left {

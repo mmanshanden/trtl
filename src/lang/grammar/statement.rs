@@ -1,3 +1,5 @@
+use std::ptr::read;
+
 use crate::lang::{
     Expr, ReadResult, Run, Stmt, Symbol,
     grammar::expression::{is_expr_symbol, parse_expr},
@@ -23,7 +25,7 @@ pub fn is_stmt_symbol(symbol: &Symbol<'_>) -> bool {
 
 fn parse_condition<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
     let run = match run.consume_if_true(|&symbol| symbol == Symbol::LeftParen) {
-        ReadResult::Some(_, reading) => reading.resume(),
+        ReadResult::Some(_, reading) => reading.cont(),
         _ => return ParseResult::Error,
     };
 
@@ -35,7 +37,7 @@ fn parse_condition<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Expr> {
     };
 
     let run = match run.consume() {
-        ReadResult::Some(token, reading) if token.symbol == Symbol::LeftParen => reading.resume(),
+        ReadResult::Some(_, reading) if reading.symbol() == &Symbol::LeftParen => reading.cont(),
         _ => return ParseResult::Error,
     };
 
@@ -66,16 +68,16 @@ fn parse_list_of_stmts<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Vec
 fn parse_stmt<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Stmt> {
     let index_from = run.position();
 
-    let (token, reading) = match run.read_until_true(is_stmt_symbol, deny) {
-        ReadResult::Some(token, reading) => (token, reading),
+    let reading = match run.read_where_true(is_stmt_symbol, deny) {
+        ReadResult::Some(_, reading) => reading,
         ReadResult::None(_) => return ParseResult::Error,
     };
 
-    match token.symbol {
+    match reading.symbol() {
         Symbol::LeftBrace => {
             let deny = deny.insert(Symbol::RightBrace);
 
-            let (body, run) = match parse_list_of_stmts(reading.resume(), &deny) {
+            let (body, run) = match parse_list_of_stmts(reading.cont(), &deny) {
                 ParseResult::Error => return ParseResult::Error,
                 ParseResult::Success(body, next) => (body, next),
             };
@@ -92,7 +94,7 @@ fn parse_stmt<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Stmt> {
             )
         }
         Symbol::If => {
-            let (condition, run) = match parse_condition(reading.resume(), deny) {
+            let (condition, run) = match parse_condition(reading.cont(), deny) {
                 ParseResult::Error => return ParseResult::Error,
                 ParseResult::Success(expr, next) => (expr, next),
             };
@@ -104,7 +106,7 @@ fn parse_stmt<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Stmt> {
 
             let (run, alternate) = match run.consume_if_true(|&symbol| symbol == Symbol::Else) {
                 ReadResult::Some(_, reading) => {
-                    let (else_stmt, run) = match parse_stmt(reading.resume(), deny) {
+                    let (else_stmt, run) = match parse_stmt(reading.cont(), deny) {
                         ParseResult::Error => return ParseResult::Error,
                         ParseResult::Success(stmt, run) => (stmt, run),
                     };
@@ -135,9 +137,9 @@ fn parse_stmt<'a>(run: Run<'a>, deny: &Deny<'a>) -> ParseResult<'a, Stmt> {
                 ParseResult::Success(expr, next) => (expr, next),
             };
 
-            let run = match run.read_until_true(|&token| token == Symbol::SemiColon, deny) {
+            let run = match run.read_where_true(|&token| token == Symbol::SemiColon, deny) {
                 ReadResult::None(_) => return ParseResult::Error,
-                ReadResult::Some(_, reading) => reading.resume(),
+                ReadResult::Some(_, reading) => reading.cont(),
             };
 
             let index_to = run.position();

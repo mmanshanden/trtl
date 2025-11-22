@@ -141,7 +141,7 @@ pub struct Param {
 pub enum Cons {
     Func {
         name: String,
-        parmeters: Vec<Param>,
+        parameters: Vec<Param>,
         body: Stmt,
         index_from: usize,
         index_to: usize,
